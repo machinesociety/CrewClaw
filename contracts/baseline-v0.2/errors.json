@@ -1,0 +1,79 @@
+{
+  "baselineVersion": "v0.2",
+  "frozenAt": "2026-03-12",
+  "errors": [
+    {
+      "http": 401,
+      "code": "UNAUTHENTICATED",
+      "message": "未登录或 token 无效",
+      "scope": ["user", "admin", "internal"]
+    },
+    {
+      "http": 403,
+      "code": "ACCESS_DENIED",
+      "message": "权限不足",
+      "scope": ["user", "admin", "internal"]
+    },
+    {
+      "http": 403,
+      "code": "USER_DISABLED",
+      "message": "用户已禁用（除 /api/v1/auth/me 外统一收口）",
+      "scope": ["user", "admin", "internal"]
+    },
+    {
+      "http": 403,
+      "code": "CREDENTIAL_ACCESS_DENIED",
+      "message": "无权操作该凭据",
+      "scope": ["user", "admin"]
+    },
+    {
+      "http": 404,
+      "code": "USER_NOT_FOUND",
+      "message": "用户不存在",
+      "scope": ["admin", "internal"]
+    },
+    {
+      "http": 404,
+      "code": "RUNTIME_NOT_FOUND",
+      "message": "runtime 不存在",
+      "scope": ["user", "admin", "internal"]
+    },
+    {
+      "http": 404,
+      "code": "MODEL_NOT_FOUND",
+      "message": "模型不存在",
+      "scope": ["user", "admin", "internal"]
+    },
+    {
+      "http": 404,
+      "code": "CREDENTIAL_NOT_FOUND",
+      "message": "凭据不存在",
+      "scope": ["user", "admin"]
+    },
+    {
+      "http": 409,
+      "code": "RUNTIME_ACTION_CONFLICT",
+      "message": "runtime 正忙或状态冲突",
+      "scope": ["user", "admin", "internal"]
+    },
+    {
+      "http": 422,
+      "code": "QUOTA_EXCEEDED",
+      "message": "超出 quota",
+      "scope": ["user", "admin"]
+    },
+    {
+      "http": 422,
+      "code": "CREDENTIAL_INVALID",
+      "message": "凭据校验失败或不可用",
+      "scope": ["user", "admin"]
+    },
+    {
+      "http": 500,
+      "code": "INTERNAL_ERROR",
+      "message": "内部错误（或上游错误映射）",
+      "scope": ["user", "admin", "internal"]
+    }
+  ]
+}
+

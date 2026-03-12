@@ -1,0 +1,36 @@
+{
+  "baselineVersion": "v0.2",
+  "frozenAt": "2026-03-12",
+  "enums": {
+    "role": ["user", "admin"],
+    "user.status": ["active", "disabled"],
+
+    "runtime.desiredState": ["running", "stopped", "deleted"],
+    "runtime.observedState": ["creating", "running", "stopped", "error", "deleted"],
+
+    "retentionPolicy": ["preserve_workspace", "wipe_workspace"],
+
+    "task.action": ["ensure_running", "stop", "delete"],
+    "task.status": ["pending", "running", "succeeded", "failed", "canceled"],
+
+    "model.source": ["shared", "local"],
+
+    "credential.status": ["active", "invalid", "disabled"],
+    "binding.source": ["platform_default", "user_owned"],
+
+    "workspaceEntry.reason": [
+      "runtime_not_found",
+      "runtime_not_running",
+      "runtime_starting",
+      "runtime_error"
+    ],
+
+    "runtimeStatus.reason": [
+      "runtime_not_found",
+      "runtime_stopped",
+      "runtime_starting",
+      "runtime_error"
+    ]
+  }
+}
+

@@ -1,0 +1,54 @@
+{
+  "baselineVersion": "v0.2",
+  "frozenAt": "2026-03-12",
+  "rules": [
+    {
+      "id": "user_response_forbid_internalEndpoint",
+      "appliesTo": [
+        "GET /api/v1/users/me/runtime",
+        "GET /api/v1/users/me/runtime/status",
+        "GET /api/v1/workspace-entry"
+      ],
+      "forbidFields": ["internalEndpoint"],
+      "reason": "internalEndpoint 仅内部可见，前端与浏览器只允许使用 browserUrl"
+    },
+    {
+      "id": "user_runtime_vs_status_boundary",
+      "appliesTo": ["GET /api/v1/users/me/runtime/status"],
+      "forbidFields": ["volumeId", "imageRef", "retentionPolicy"],
+      "allowFields": [
+        "runtimeId",
+        "desiredState",
+        "observedState",
+        "ready",
+        "browserUrl",
+        "reason",
+        "lastError"
+      ],
+      "reason": "status 接口是高频轮询投影，不返回稳定字段"
+    },
+    {
+      "id": "disabled_user_global_semantics",
+      "appliesTo": [
+        "GET /api/v1/users/me/runtime",
+        "GET /api/v1/users/me/runtime/status",
+        "POST /api/v1/users/me/runtime/start",
+        "POST /api/v1/users/me/runtime/stop",
+        "DELETE /api/v1/users/me/runtime",
+        "GET /api/v1/models",
+        "GET /api/v1/models/bindings",
+        "PUT /api/v1/models/{modelId}/binding",
+        "GET /api/v1/credentials",
+        "POST /api/v1/credentials",
+        "POST /api/v1/credentials/{credentialId}/verify",
+        "DELETE /api/v1/credentials/{credentialId}",
+        "GET /api/v1/usage/summary",
+        "GET /api/v1/workspace-entry"
+      ],
+      "mustReturnError": { "http": 403, "code": "USER_DISABLED" },
+      "except": ["GET /api/v1/auth/me"],
+      "reason": "disabled 用户除 /api/v1/auth/me 外统一收口为 403 USER_DISABLED"
+    }
+  ]
+}
+
