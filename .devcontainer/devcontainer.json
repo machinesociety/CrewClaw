@@ -1,0 +1,22 @@
+{
+    "name": "crewclaw-dev",
+    "build": {
+      "dockerfile": "Dockerfile",
+      "context": ".."
+    },
+    "workspaceFolder": "/workspace",
+    "mounts": [
+      "source=${localWorkspaceFolder},target=/workspace,type=bind"
+    ],
+    "customizations": {
+      "vscode": {
+        "extensions": [
+          "ms-python.python",
+          "ms-python.vscode-pylance",
+          "ms-azuretools.vscode-docker",
+          "charliermarsh.ruff"
+        ]
+      }
+    },
+    "remoteUser": "root"
+  }
