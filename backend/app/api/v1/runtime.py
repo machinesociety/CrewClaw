@@ -18,7 +18,7 @@ async def start_runtime(
     - 调用 RuntimeService.ensure_running 并返回真实 taskId。
     """
     return RuntimeActionAcceptedResponse(
-        task_id="rtask_001",
+        taskId="rtask_001",
         action="ensure_running",
         status="accepted",
     )
@@ -35,7 +35,7 @@ async def stop_runtime(
     - 调用 RuntimeService.stop_runtime。
     """
     return RuntimeActionAcceptedResponse(
-        task_id="rtask_002",
+        taskId="rtask_002",
         action="stop",
         status="accepted",
     )
@@ -52,7 +52,7 @@ async def delete_runtime(
     - 调用 RuntimeService.delete_runtime，并根据 retentionPolicy 处理 workspace。
     """
     return RuntimeActionAcceptedResponse(
-        task_id="rtask_003",
+        taskId="rtask_003",
         action="delete",
         status="accepted",
     )
@@ -70,9 +70,9 @@ async def get_runtime_task(
     - 从任务仓储中查询任务状态。
     """
     return RuntimeTaskResponse(
-        task_id=task_id,
-        user_id="u_001",
-        runtime_id="rt_001",
+        taskId=task_id,
+        userId="u_001",
+        runtimeId="rt_001",
         action="ensure_running",
         status="running",
         message="creating",

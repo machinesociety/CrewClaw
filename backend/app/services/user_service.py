@@ -1,38 +1,129 @@
-from app.domain.users import User, UserRuntimeBinding, DesiredState, ObservedState, RetentionPolicy
+from __future__ import annotations
+
+from app.domain.users import (
+    DesiredState,
+    ObservedState,
+    RetentionPolicy,
+    User,
+    UserRuntimeBinding,
+    UserRole,
+    UserStatus,
+)
+from app.repositories.user_repository import UserRepository, UserRuntimeBindingRepository
 
 
 class UserService:
     """
     用户与 UserRuntimeBinding 相关服务。
-
-    TODO:
-    - 接入用户仓储与配额仓储。
-    - 以 subjectId 幂等创建用户。
     """
 
+    def __init__(
+        self,
+        user_repo: UserRepository,
+        binding_repo: UserRuntimeBindingRepository,
+        default_image_ref: str,
+        default_retention_policy: str,
+    ) -> None:
+        self._user_repo = user_repo
+        self._binding_repo = binding_repo
+        self._default_image_ref = default_image_ref
+        self._default_retention_policy = RetentionPolicy(default_retention_policy)
+
     def get_or_create_user(self, subject_id: str) -> User:
-        # TODO: 实现真实的获取或创建逻辑。
-        _ = subject_id
-        return User(
-            user_id="u_001",
+        """
+        以 subjectId 幂等创建用户，tenantId=t_default，role=user，status=active。
+        """
+
+        user = self._user_repo.get_by_subject_id(subject_id)
+        if user is not None:
+            return user
+
+        user_id = f"u_{abs(hash(subject_id))}"
+        user = User(
+            user_id=user_id,
             subject_id=subject_id,
             tenant_id="t_default",
-            role="user",  # type: ignore[arg-type]
-            status="active",  # type: ignore[arg-type]
+            role=UserRole.USER,
+            status=UserStatus.ACTIVE,
         )
+        self._user_repo.save(user)
+        return user
 
     def get_runtime_binding(self, user_id: str) -> UserRuntimeBinding | None:
-        # TODO: 从仓储中加载真实 binding。
-        _ = user_id
-        return UserRuntimeBinding(
-            user_id="u_001",
-            runtime_id="rt_001",
-            volume_id="vol_001",
-            image_ref="crewclaw-runtime-wrapper:openclaw-1.0.0",
-            desired_state=DesiredState.RUNNING,
-            observed_state=ObservedState.RUNNING,
-            retention_policy=RetentionPolicy.PRESERVE_WORKSPACE,
-            browser_url="https://u-001.crewclaw.example.com",
-            internal_endpoint="http://crewclaw-u001:3000",
+        return self._binding_repo.get_by_user_id(user_id)
+
+    def ensure_runtime_binding(self, user_id: str) -> UserRuntimeBinding:
+        """
+        首次 runtime 启动前，幂等创建 UserRuntimeBinding。
+        """
+
+        existing = self._binding_repo.get_by_user_id(user_id)
+        if existing is not None:
+            return existing
+
+        runtime_id = f"rt_{user_id}"
+        volume_id = f"vol_{user_id}"
+
+        binding = UserRuntimeBinding(
+            user_id=user_id,
+            runtime_id=runtime_id,
+            volume_id=volume_id,
+            image_ref=self._default_image_ref,
+            desired_state=DesiredState.STOPPED,
+            observed_state=ObservedState.STOPPED,
+            retention_policy=self._default_retention_policy,
+            browser_url=None,
+            internal_endpoint=None,
+            last_error=None,
         )
+        self._binding_repo.save(binding)
+        return binding
+
+    def upsert_runtime_binding(
+        self,
+        user_id: str,
+        runtime_id: str,
+        volume_id: str,
+        image_ref: str,
+        desired_state: DesiredState,
+        observed_state: ObservedState,
+        retention_policy: RetentionPolicy,
+        browser_url: str | None = None,
+        internal_endpoint: str | None = None,
+        last_error: str | None = None,
+    ) -> UserRuntimeBinding:
+        binding = UserRuntimeBinding(
+            user_id=user_id,
+            runtime_id=runtime_id,
+            volume_id=volume_id,
+            image_ref=image_ref,
+            desired_state=desired_state,
+            observed_state=observed_state,
+            retention_policy=retention_policy,
+            browser_url=browser_url,
+            internal_endpoint=internal_endpoint,
+            last_error=last_error,
+        )
+        self._binding_repo.save(binding)
+        return binding
+
+    def update_runtime_binding_state(
+        self,
+        user_id: str,
+        desired_state: DesiredState,
+        observed_state: ObservedState,
+        browser_url: str | None = None,
+        internal_endpoint: str | None = None,
+        last_error: str | None = None,
+    ) -> UserRuntimeBinding | None:
+        binding = self._binding_repo.get_by_user_id(user_id)
+        if binding is None:
+            return None
+        binding.desired_state = desired_state
+        binding.observed_state = observed_state
+        binding.browser_url = browser_url
+        binding.internal_endpoint = internal_endpoint
+        binding.last_error = last_error
+        self._binding_repo.save(binding)
+        return binding
 

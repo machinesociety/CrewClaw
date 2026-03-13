@@ -1,5 +1,7 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException
 
+from app.core.dependencies import get_user_service
+from app.domain.users import DesiredState, ObservedState, RetentionPolicy
 from app.schemas.internal import (
     SyncUserRequest,
     RuntimeBindingUpsertRequest,
@@ -9,38 +11,100 @@ from app.schemas.internal import (
     EnsureContainerRequest,
     ContainerStateResponse,
 )
+from app.schemas.runtime import (
+    DesiredState as SchemaDesiredState,
+    ObservedState as SchemaObservedState,
+    RetentionPolicy as SchemaRetentionPolicy,
+    UserRuntimeBinding,
+)
+from app.services.user_service import UserService
 
 
 router = APIRouter(prefix="/internal", tags=["internal"])
 
 
 @router.post("/users/sync")
-async def sync_user(body: SyncUserRequest) -> dict:
+async def sync_user(
+    body: SyncUserRequest,
+    user_service: UserService = Depends(get_user_service),
+) -> dict:
     """
     首次登录同步 / 创建用户。
 
-    TODO:
-    - 调用 UserService 以 subjectId 幂等创建用户。
     """
-    _ = body
-    return {"status": "ok"}
+    user = user_service.get_or_create_user(body.subject_id)
+    return {"userId": user.user_id, "subjectId": user.subject_id, "tenantId": user.tenant_id}
+
+
+@router.post("/users/{user_id}/runtime-binding/ensure", response_model=UserRuntimeBinding)
+async def ensure_runtime_binding(
+    user_id: str,
+    user_service: UserService = Depends(get_user_service),
+) -> UserRuntimeBinding:
+    """
+    确保 runtime binding 存在；首次创建时由模块 2 分配 runtimeId / volumeId / 默认 imageRef / 默认 retentionPolicy。
+    """
+
+    binding = user_service.ensure_runtime_binding(user_id)
+    return UserRuntimeBinding(
+        runtimeId=binding.runtime_id,
+        volumeId=binding.volume_id,
+        imageRef=binding.image_ref,
+        desiredState=SchemaDesiredState(binding.desired_state.value),
+        observedState=SchemaObservedState(binding.observed_state.value),
+        browserUrl=binding.browser_url,
+        internalEndpoint=binding.internal_endpoint,
+        retentionPolicy=SchemaRetentionPolicy(binding.retention_policy.value),
+        lastError=binding.last_error,
+    )
 
 
 @router.put("/users/{user_id}/runtime-binding")
-async def upsert_runtime_binding(user_id: str, body: RuntimeBindingUpsertRequest) -> dict:
+async def upsert_runtime_binding(
+    user_id: str,
+    body: RuntimeBindingUpsertRequest,
+    user_service: UserService = Depends(get_user_service),
+) -> dict:
     """
     创建或更新 runtime binding。
     """
-    _ = (user_id, body)
+    desired = DesiredState(body.desired_state)
+    observed = ObservedState(body.observed_state)
+    retention = RetentionPolicy(body.retention_policy)
+    user_service.upsert_runtime_binding(
+        user_id=user_id,
+        runtime_id=body.runtime_id,
+        volume_id=body.volume_id,
+        image_ref=body.image_ref,
+        desired_state=desired,
+        observed_state=observed,
+        retention_policy=retention,
+        browser_url=body.browser_url,
+        internal_endpoint=body.internal_endpoint,
+        last_error=body.last_error,
+    )
     return {"status": "ok"}
 
 
 @router.patch("/users/{user_id}/runtime-binding/state")
-async def update_runtime_binding_state(user_id: str, body: RuntimeBindingStateUpdateRequest) -> dict:
+async def update_runtime_binding_state(
+    user_id: str,
+    body: RuntimeBindingStateUpdateRequest,
+    user_service: UserService = Depends(get_user_service),
+) -> dict:
     """
     更新 runtime binding 状态。
     """
-    _ = (user_id, body)
+    binding = user_service.update_runtime_binding_state(
+        user_id=user_id,
+        desired_state=DesiredState(body.desired_state),
+        observed_state=ObservedState(body.observed_state),
+        browser_url=body.browser_url,
+        internal_endpoint=body.internal_endpoint,
+        last_error=body.last_error,
+    )
+    if binding is None:
+        raise HTTPException(status_code=404, detail="RUNTIME_NOT_FOUND")
     return {"status": "ok"}
 
 
