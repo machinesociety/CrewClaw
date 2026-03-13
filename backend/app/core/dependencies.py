@@ -5,6 +5,7 @@ from app.core.auth import AuthContext, build_auth_context_from_request
 from app.core.database import get_db_session, init_db
 from app.core.errors import UserDisabledError
 from app.core.settings import AppSettings, get_settings
+from app.infra.runtime_manager_client import RuntimeManagerClient
 from app.repositories.user_repository import (
     InMemoryUserRepository,
     SqlAlchemyUserRepository,
@@ -12,10 +13,19 @@ from app.repositories.user_repository import (
     UserRepository,
     UserRuntimeBindingRepository,
 )
+from app.services.runtime_config_renderer import RuntimeConfigRenderer
+from app.services.runtime_service import (
+    InMemoryRuntimeTaskRepository,
+    ModelConfigServiceAdapter,
+    RuntimeManagerPortAdapter,
+    RuntimeService,
+    UserRuntimeBindingServiceAdapter,
+)
 from app.services.user_service import UserService
 
 
 _user_repo_singleton: UserRepository | None = None
+_runtime_task_repo_singleton: InMemoryRuntimeTaskRepository | None = None
 
 
 def get_app_settings() -> AppSettings:
@@ -83,6 +93,97 @@ def get_user_service(
         binding_repo=binding_repo,
         default_image_ref="crewclaw-runtime-wrapper:openclaw-1.0.0",
         default_retention_policy="preserve_workspace",
+    )
+
+
+def get_runtime_task_repository() -> InMemoryRuntimeTaskRepository:
+    global _runtime_task_repo_singleton
+    if _runtime_task_repo_singleton is None:
+        _runtime_task_repo_singleton = InMemoryRuntimeTaskRepository()
+    return _runtime_task_repo_singleton
+
+
+def get_runtime_service(
+    user_service: UserService = Depends(get_user_service),
+    settings: AppSettings = Depends(get_app_settings),
+    task_repo: InMemoryRuntimeTaskRepository = Depends(get_runtime_task_repository),
+) -> RuntimeService:
+    """
+    组装 RuntimeService 所需依赖。
+    """
+
+    # 绑定服务适配到 Pydantic UserRuntimeBinding 视图
+    from app.schemas.runtime import UserRuntimeBinding as BindingSchema
+    from app.schemas.internal import ModelConfigResponse
+    from app.api.v1.internal import get_user_model_config as internal_get_model_config
+
+    def ensure_binding_schema(user_id: str) -> BindingSchema:
+        binding = user_service.ensure_runtime_binding(user_id)
+        return BindingSchema(
+            runtimeId=binding.runtime_id,
+            volumeId=binding.volume_id,
+            imageRef=binding.image_ref,
+            desiredState=binding.desired_state.value,  # type: ignore[arg-type]
+            observedState=binding.observed_state.value,  # type: ignore[arg-type]
+            browserUrl=binding.browser_url,
+            internalEndpoint=binding.internal_endpoint,
+            retentionPolicy=binding.retention_policy.value,  # type: ignore[arg-type]
+            lastError=binding.last_error,
+        )
+
+    def patch_binding_state_schema(
+        user_id: str,
+        desired_state: str,
+        observed_state: str,
+        browser_url: str | None,
+        internal_endpoint: str | None,
+        last_error: str | None,
+    ) -> BindingSchema | None:
+        from app.domain.users import DesiredState as DomainDesired, ObservedState as DomainObserved
+
+        updated = user_service.update_runtime_binding_state(
+            user_id=user_id,
+            desired_state=DomainDesired(desired_state),
+            observed_state=DomainObserved(observed_state),
+            browser_url=browser_url,
+            internal_endpoint=internal_endpoint,
+            last_error=last_error,
+        )
+        if updated is None:
+            return None
+        return BindingSchema(
+            runtimeId=updated.runtime_id,
+            volumeId=updated.volume_id,
+            imageRef=updated.image_ref,
+            desiredState=updated.desired_state.value,  # type: ignore[arg-type]
+            observedState=updated.observed_state.value,  # type: ignore[arg-type]
+            browserUrl=updated.browser_url,
+            internalEndpoint=updated.internal_endpoint,
+            retentionPolicy=updated.retention_policy.value,  # type: ignore[arg-type]
+            lastError=updated.last_error,
+        )
+
+    def get_model_config(user_id: str) -> ModelConfigResponse:
+        return internal_get_model_config(user_id)  # type: ignore[return-value]
+
+    binding_port = UserRuntimeBindingServiceAdapter(
+        ensure_binding_fn=ensure_binding_schema,
+        patch_state_fn=patch_binding_state_schema,
+    )
+    model_config_port = ModelConfigServiceAdapter(get_model_config_fn=get_model_config)
+
+    base_url = settings.runtime_manager_base_url or "http://runtime-manager"
+    runtime_manager_client = RuntimeManagerClient(base_url=base_url)
+    runtime_manager_port = RuntimeManagerPortAdapter(runtime_manager_client)
+
+    renderer = RuntimeConfigRenderer()
+
+    return RuntimeService(
+        binding_service=binding_port,
+        model_config_service=model_config_port,
+        runtime_manager=runtime_manager_port,
+        task_repo=task_repo,
+        config_renderer=renderer,
     )
 
 
