@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from app.domain.runtime_ports import ModelConfig
-from app.schemas.runtime import UserRuntimeBinding
+from app.schemas.runtime import RuntimeBindingSnapshot
 
 
 class RuntimeConfigRenderer:
@@ -21,7 +21,7 @@ class RuntimeConfigRenderer:
     def render(
         self,
         user_id: str,
-        binding: UserRuntimeBinding,
+        binding: RuntimeBindingSnapshot,
         model_config: ModelConfig,
     ) -> tuple[str, str]:
         """

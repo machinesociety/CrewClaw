@@ -1,18 +1,18 @@
 from app.domain.runtime import RuntimeAction, RuntimeTask, TaskStatus
 from app.domain.runtime_ports import ModelConfig
-from app.schemas.runtime import DesiredState, ObservedState, RetentionPolicy, UserRuntimeBinding
+from app.schemas.runtime import DesiredState, ObservedState, RetentionPolicy, RuntimeBindingSnapshot
 from app.services.runtime_config_renderer import RuntimeConfigRenderer
 from app.services.runtime_service import InMemoryRuntimeTaskRepository, RuntimeService
 
 
 class FakeBindingPort:
     def __init__(self) -> None:
-        self.binding: UserRuntimeBinding | None = None
-        self.patched: list[UserRuntimeBinding] = []
+        self.binding: RuntimeBindingSnapshot | None = None
+        self.patched: list[RuntimeBindingSnapshot] = []
 
-    def ensure_binding(self, user_id: str) -> UserRuntimeBinding:
+    def ensure_binding(self, user_id: str) -> RuntimeBindingSnapshot:
         if self.binding is None:
-            self.binding = UserRuntimeBinding(
+            self.binding = RuntimeBindingSnapshot(
                 runtimeId="rt_001",
                 volumeId="vol_001",
                 imageRef="crewclaw-runtime-wrapper:openclaw-1.0.0",
@@ -33,9 +33,9 @@ class FakeBindingPort:
         browser_url: str | None,
         internal_endpoint: str | None,
         last_error: str | None,
-    ) -> UserRuntimeBinding:
+    ) -> RuntimeBindingSnapshot:
         assert self.binding is not None
-        self.binding = UserRuntimeBinding(
+        self.binding = RuntimeBindingSnapshot(
             runtimeId=self.binding.runtimeId,
             volumeId=self.binding.volumeId,
             imageRef=self.binding.imageRef,

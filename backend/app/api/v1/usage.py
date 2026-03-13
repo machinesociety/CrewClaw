@@ -33,8 +33,8 @@ async def get_usage_summary(
     """
     summary = service.get_user_usage(ctx.userId)
     return UsageSummaryResponse(
-        user_id=summary.user_id,
-        total_tokens=summary.total_tokens,
-        used_tokens=summary.total_tokens,
+        userId=summary.user_id,
+        totalTokens=summary.total_tokens,
+        usedTokens=summary.used_tokens,
     )
 

@@ -51,7 +51,8 @@ class _DummyRuntimeManager:
         self.stopped.add(runtime_id)
         return {"runtimeId": runtime_id, "message": "stopped"}
 
-    def delete(self, runtime_id: str) -> dict:
+    def delete(self, runtime_id: str, retention_policy: str) -> dict:
+        _ = retention_policy
         return {"runtimeId": runtime_id, "message": "deleted"}
 
 
@@ -116,7 +117,7 @@ def test_governance_smoke_admin_disable_user_stops_runtime_and_frontend_403(clie
         RuntimeManagerPortAdapter,
         UserRuntimeBindingServiceAdapter,
     )
-    from app.schemas.runtime import UserRuntimeBinding as BindingSchema
+    from app.schemas.runtime import RuntimeBindingSnapshot as BindingSchema
     from app.schemas.internal import ModelConfigResponse
     from app.api.v1.internal import get_user_model_config as internal_get_model_config
 

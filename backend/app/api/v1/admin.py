@@ -2,21 +2,35 @@ from fastapi import APIRouter, Depends
 
 from app.core.auth import AuthContext
 from app.core.dependencies import (
-    get_auth_context,
     get_runtime_service,
     get_user_service,
+    require_active_user,
 )
+from app.core.errors import AccessDeniedError, UserNotFoundError
 from app.domain.users import UserStatus
 from app.repositories.model_repository import (
-    get_inmemory_credential_repository,
+    ModelRepository,
+    ProviderCredentialRepository,
+    UsageRepository,
+    get_inmemory_model_repository,
+    get_inmemory_provider_credential_repository,
     get_inmemory_usage_repository,
 )
 from app.schemas.admin import (
-    UpdateUserStatusRequest,
-    AdminUserRuntimeResponse,
-    AdminUserCredentialsResponse,
     AdminUsageSummaryResponse,
+    AdminUserDetailResponse,
+    AdminUserListItem,
+    AdminUserRuntimeResponse,
+    UpdateUserStatusRequest,
 )
+from app.schemas.credentials import (
+    CreateProviderCredentialRequest,
+    ProviderCredentialItem,
+    ProviderCredentialListResponse,
+    VerifyProviderCredentialResponse,
+)
+from app.schemas.models import AdminModelItem, AdminModelListResponse, UpdateAdminModelRequest
+from app.services.model_service import ModelService, ProviderCredentialService, UsageService
 from app.services.runtime_service import RuntimeService
 from app.services.user_service import UserService
 
@@ -24,67 +38,69 @@ from app.services.user_service import UserService
 router = APIRouter(tags=["admin"])
 
 
-def _require_admin(ctx: AuthContext = Depends(get_auth_context)) -> AuthContext:
-    """
-    admin 权限校验依赖。
-    """
-
+def _require_admin(ctx: AuthContext = Depends(require_active_user)) -> AuthContext:
     if not ctx.isAdmin:
-        from app.core.errors import AccessDeniedError
-
         raise AccessDeniedError()
     return ctx
 
 
-@router.get("/admin/users")
+def get_model_service(model_repo: ModelRepository = Depends(get_inmemory_model_repository)) -> ModelService:
+    return ModelService(model_repo=model_repo)
+
+
+def get_provider_credential_service(
+    repo: ProviderCredentialRepository = Depends(get_inmemory_provider_credential_repository),
+) -> ProviderCredentialService:
+    return ProviderCredentialService(credential_repo=repo)
+
+
+def get_usage_service(repo: UsageRepository = Depends(get_inmemory_usage_repository)) -> UsageService:
+    return UsageService(usage_repo=repo)
+
+
+@router.get("/admin/users", response_model=list[AdminUserListItem])
 async def list_users(
     _: AuthContext = Depends(_require_admin),
     user_service: UserService = Depends(get_user_service),
-) -> list[dict]:
-    """
-    管理员查看用户列表（最小字段集）。
-    """
-
-    # 目前 UserService 尚未提供列表能力，MVP 使用仓储私有属性兜底。
+) -> list[AdminUserListItem]:
     repo = user_service._user_repo  # type: ignore[attr-defined]
     users = []
     if hasattr(repo, "_users"):
         users = list(repo._users.values())  # type: ignore[attr-defined]
 
     return [
-        {
-            "userId": u.user_id,
-            "subjectId": u.subject_id,
-            "role": u.role.value,
-            "status": u.status.value,
-        }
+        AdminUserListItem(
+            userId=u.user_id,
+            subjectId=u.subject_id,
+            role=u.role.value,
+            status=u.status.value,
+            runtimeObservedState=(
+                user_service.get_runtime_binding(u.user_id).observed_state.value
+                if user_service.get_runtime_binding(u.user_id) is not None
+                else None
+            ),
+        )
         for u in users
     ]
 
 
-@router.get("/admin/users/{user_id}")
+@router.get("/admin/users/{user_id}", response_model=AdminUserDetailResponse)
 async def get_admin_user_detail(
     user_id: str,
     _: AuthContext = Depends(_require_admin),
     user_service: UserService = Depends(get_user_service),
-) -> dict:
-    """
-    管理员查看用户详情。
-    """
-
+) -> AdminUserDetailResponse:
     user = user_service.get_user_by_id(user_id)
     if user is None:
-        from app.core.errors import UserNotFoundError
-
         raise UserNotFoundError()
 
-    return {
-        "userId": user.user_id,
-        "subjectId": user.subject_id,
-        "tenantId": user.tenant_id,
-        "role": user.role.value,
-        "status": user.status.value,
-    }
+    return AdminUserDetailResponse(
+        userId=user.user_id,
+        subjectId=user.subject_id,
+        tenantId=user.tenant_id,
+        role=user.role.value,
+        status=user.status.value,
+    )
 
 
 @router.patch("/admin/users/{user_id}/status")
@@ -95,13 +111,6 @@ async def update_user_status(
     user_service: UserService = Depends(get_user_service),
     runtime_service: RuntimeService = Depends(get_runtime_service),
 ) -> dict:
-    """
-    启用 / 禁用用户。
-
-    - 更新 User.status。
-    - 当改为 disabled 时，触发 runtime 收敛停止。
-    """
-
     new_status = UserStatus(body.status)
     user = user_service.set_user_status(user_id, new_status)
 
@@ -117,10 +126,6 @@ async def get_admin_user_runtime(
     _: AuthContext = Depends(_require_admin),
     user_service: UserService = Depends(get_user_service),
 ) -> AdminUserRuntimeResponse:
-    """
-    管理员查看指定用户的 runtime 详情。
-    """
-
     binding = user_service.get_runtime_binding(user_id)
     if binding is None:
         from app.core.errors import RuntimeNotFoundError
@@ -128,61 +133,139 @@ async def get_admin_user_runtime(
         raise RuntimeNotFoundError()
 
     return AdminUserRuntimeResponse(
-        runtime_id=binding.runtime_id,
-        desired_state=binding.desired_state.value,
-        observed_state=binding.observed_state.value,
-        browser_url=binding.browser_url,
-        internal_endpoint=binding.internal_endpoint,
-        last_error=binding.last_error,
+        runtimeId=binding.runtime_id,
+        volumeId=binding.volume_id,
+        imageRef=binding.image_ref,
+        desiredState=binding.desired_state.value,
+        observedState=binding.observed_state.value,
+        browserUrl=binding.browser_url,
+        internalEndpoint=binding.internal_endpoint,
+        retentionPolicy=binding.retention_policy.value,
+        lastError=binding.last_error,
     )
 
 
-@router.get(
-    "/admin/users/{user_id}/credentials",
-    response_model=AdminUserCredentialsResponse,
-)
-async def get_admin_user_credentials(
-    user_id: str,
+@router.get("/admin/models", response_model=AdminModelListResponse)
+async def list_admin_models(
     _: AuthContext = Depends(_require_admin),
-) -> AdminUserCredentialsResponse:
-    """
-    管理员查看指定用户的凭据元数据。
-    """
-
-    cred_repo = get_inmemory_credential_repository()
-    credentials = cred_repo.list_credentials_for_user(user_id)
-    return AdminUserCredentialsResponse(
-        credentials=[
-            {
-                "credentialId": c.credential_id,
-                "name": c.name,
-                "status": c.status.value,
-                "lastValidatedAt": c.last_validated_at,
-            }
-            for c in credentials
+    service: ModelService = Depends(get_model_service),
+) -> AdminModelListResponse:
+    return AdminModelListResponse(
+        models=[
+            AdminModelItem(
+                modelId=model.model_id,
+                name=model.name,
+                provider=model.provider,
+                source=model.source.value,
+                enabled=model.enabled,
+                defaultRoute=model.default_route,
+                userVisible=model.user_visible,
+                defaultProviderCredentialId=model.default_provider_credential_id,
+            )
+            for model in service.list_models_for_admin()
         ]
     )
+
+
+@router.put("/admin/models/{model_id}", response_model=AdminModelItem)
+async def update_admin_model(
+    model_id: str,
+    body: UpdateAdminModelRequest,
+    _: AuthContext = Depends(_require_admin),
+    service: ModelService = Depends(get_model_service),
+) -> AdminModelItem:
+    model = service.update_model(
+        model_id,
+        enabled=body.enabled,
+        user_visible=body.userVisible,
+        default_route=body.defaultRoute,
+        default_provider_credential_id=body.defaultProviderCredentialId,
+    )
+    return AdminModelItem(
+        modelId=model.model_id,
+        name=model.name,
+        provider=model.provider,
+        source=model.source.value,
+        enabled=model.enabled,
+        defaultRoute=model.default_route,
+        userVisible=model.user_visible,
+        defaultProviderCredentialId=model.default_provider_credential_id,
+    )
+
+
+@router.get("/admin/provider-credentials", response_model=ProviderCredentialListResponse)
+async def list_provider_credentials(
+    _: AuthContext = Depends(_require_admin),
+    service: ProviderCredentialService = Depends(get_provider_credential_service),
+) -> ProviderCredentialListResponse:
+    return ProviderCredentialListResponse(
+        credentials=[
+            ProviderCredentialItem(
+                credentialId=item.credential_id,
+                provider=item.provider,
+                name=item.name,
+                status=item.status.value,
+                verified=item.status.value == "active",
+                lastValidatedAt=item.last_validated_at,
+            )
+            for item in service.list_credentials()
+        ]
+    )
+
+
+@router.post("/admin/provider-credentials", response_model=ProviderCredentialItem, status_code=201)
+async def create_provider_credential(
+    body: CreateProviderCredentialRequest,
+    _: AuthContext = Depends(_require_admin),
+    service: ProviderCredentialService = Depends(get_provider_credential_service),
+) -> ProviderCredentialItem:
+    item = service.create_credential(body.provider, body.name, body.secret)
+    return ProviderCredentialItem(
+        credentialId=item.credential_id,
+        provider=item.provider,
+        name=item.name,
+        status=item.status.value,
+        verified=item.status.value == "active",
+        lastValidatedAt=item.last_validated_at,
+    )
+
+
+@router.post(
+    "/admin/provider-credentials/{credential_id}/verify",
+    response_model=VerifyProviderCredentialResponse,
+)
+async def verify_provider_credential(
+    credential_id: str,
+    _: AuthContext = Depends(_require_admin),
+    service: ProviderCredentialService = Depends(get_provider_credential_service),
+) -> VerifyProviderCredentialResponse:
+    item = service.verify_credential(credential_id)
+    return VerifyProviderCredentialResponse(
+        verified=item.status.value == "active",
+        status=item.status.value,
+        lastValidatedAt=item.last_validated_at,
+    )
+
+
+@router.delete("/admin/provider-credentials/{credential_id}", status_code=204)
+async def delete_provider_credential(
+    credential_id: str,
+    _: AuthContext = Depends(_require_admin),
+    service: ProviderCredentialService = Depends(get_provider_credential_service),
+) -> None:
+    service.delete_credential(credential_id)
+    return None
 
 
 @router.get("/admin/usage/summary", response_model=AdminUsageSummaryResponse)
 async def get_admin_usage_summary(
     _: AuthContext = Depends(_require_admin),
+    service: UsageService = Depends(get_usage_service),
 ) -> AdminUsageSummaryResponse:
-    """
-    管理员查看平台 usage 汇总。
-    """
-
-    usage_repo = get_inmemory_usage_repository()
-    total_tokens = 0
-    used_tokens = 0
-    if hasattr(usage_repo, "_usage"):
-        for summary in usage_repo._usage.values():  # type: ignore[attr-defined]
-            total_tokens += summary.total_tokens
-            used_tokens += getattr(summary, "used_tokens", 0)
-
+    summary = service.get_total_usage()
     return AdminUsageSummaryResponse(
-        total_tokens=total_tokens,
-        used_tokens=used_tokens,
+        totalTokens=summary.total_tokens,
+        usedTokens=summary.used_tokens,
     )
 
 

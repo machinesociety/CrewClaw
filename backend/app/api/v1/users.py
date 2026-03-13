@@ -55,7 +55,6 @@ async def get_my_runtime_binding(
         desiredState=SchemaDesiredState(binding.desired_state.value),
         observedState=SchemaObservedState(binding.observed_state.value),
         browserUrl=binding.browser_url,
-        internalEndpoint=binding.internal_endpoint,
         retentionPolicy=SchemaRetentionPolicy(binding.retention_policy.value),
         lastError=binding.last_error,
     )

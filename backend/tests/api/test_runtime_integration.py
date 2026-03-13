@@ -2,7 +2,7 @@ from fastapi import status
 
 from app.core.dependencies import get_runtime_service
 from app.domain.runtime_ports import ModelConfig
-from app.schemas.runtime import DesiredState, ObservedState, RetentionPolicy, UserRuntimeBinding
+from app.schemas.runtime import DesiredState, ObservedState, RetentionPolicy, RuntimeBindingSnapshot
 from app.services.runtime_config_renderer import RuntimeConfigRenderer
 from app.services.runtime_service import (
     InMemoryRuntimeTaskRepository,
@@ -16,12 +16,12 @@ def _auth_headers(subject: str) -> dict[str, str]:
 
 class FakeBindingPort:
     def __init__(self) -> None:
-        self.binding: UserRuntimeBinding | None = None
-        self.patched: list[UserRuntimeBinding] = []
+        self.binding: RuntimeBindingSnapshot | None = None
+        self.patched: list[RuntimeBindingSnapshot] = []
 
-    def ensure_binding(self, user_id: str) -> UserRuntimeBinding:
+    def ensure_binding(self, user_id: str) -> RuntimeBindingSnapshot:
         if self.binding is None:
-            self.binding = UserRuntimeBinding(
+            self.binding = RuntimeBindingSnapshot(
                 runtimeId="rt_001",
                 volumeId="vol_001",
                 imageRef="crewclaw-runtime-wrapper:openclaw-1.0.0",
@@ -42,9 +42,9 @@ class FakeBindingPort:
         browser_url: str | None,
         internal_endpoint: str | None,
         last_error: str | None,
-    ) -> UserRuntimeBinding:
+    ) -> RuntimeBindingSnapshot:
         assert self.binding is not None
-        self.binding = UserRuntimeBinding(
+        self.binding = RuntimeBindingSnapshot(
             runtimeId=self.binding.runtimeId,
             volumeId=self.binding.volumeId,
             imageRef=self.binding.imageRef,
@@ -122,7 +122,7 @@ def test_half_main_flow_login_sync_ensure_start_and_query_task(client, app):
         headers = _auth_headers(subject)
 
         # 通过模块 1/2 跑一次同步与 binding ensure
-        resp_sync = client.post("/internal/users/sync", json={"subject_id": subject})
+        resp_sync = client.post("/internal/users/sync", json={"subjectId": subject})
         assert resp_sync.status_code == status.HTTP_200_OK
         user_id = resp_sync.json()["userId"]
 

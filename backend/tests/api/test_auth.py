@@ -57,10 +57,9 @@ def test_auth_access_disabled_user_blocked(client):
     try:
         headers = {"X-Authentik-Subject": "authentik:disabled"}
         resp = client.get("/api/v1/auth/access", headers=headers)
-        assert resp.status_code == status.HTTP_200_OK
+        assert resp.status_code == status.HTTP_403_FORBIDDEN
         data = resp.json()
-        assert data["allowed"] is False
-        assert data["reason"] == "USER_DISABLED"
+        assert data["code"] == "USER_DISABLED"
     finally:
         client.app.dependency_overrides.pop(get_sqlalchemy_user_repository, None)
 

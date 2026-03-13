@@ -36,9 +36,21 @@ class TaskStatus(str, Enum):
     canceled = "canceled"
 
 
+class RuntimeBindingSnapshot(BaseModel):
+    runtimeId: str
+    volumeId: str
+    imageRef: str
+    desiredState: DesiredState
+    observedState: ObservedState
+    browserUrl: str | None
+    internalEndpoint: str | None
+    retentionPolicy: RetentionPolicy
+    lastError: str | None
+
+
 class UserRuntimeBinding(BaseModel):
     """
-    与 baseline-v0.2 UserRuntimeBinding JSON Schema 一致的内部模型。
+    用户侧完整 runtime binding 视图，不暴露 internalEndpoint。
     """
 
     runtimeId: str
@@ -47,7 +59,6 @@ class UserRuntimeBinding(BaseModel):
     desiredState: DesiredState
     observedState: ObservedState
     browserUrl: str | None
-    internalEndpoint: str | None
     retentionPolicy: RetentionPolicy
     lastError: str | None
 
@@ -110,6 +121,10 @@ class RuntimeActionAcceptedResponse(BaseModel):
     taskId: str
     action: TaskAction
     status: str
+
+
+class DeleteRuntimeRequest(BaseModel):
+    retentionPolicy: RetentionPolicy | None = None
 
 
 class UserQuotaResponse(BaseModel):

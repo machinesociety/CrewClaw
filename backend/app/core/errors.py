@@ -60,11 +60,35 @@ class RuntimeNotFoundError(AppError):
     )
 
 
-class CredentialNotFoundError(AppError):
+class UserNotFoundError(AppError):
     spec = ErrorSpec(
         http_status=HTTPStatus.NOT_FOUND,
-        code="CREDENTIAL_NOT_FOUND",
-        message="Credential not found.",
+        code="USER_NOT_FOUND",
+        message="User not found.",
+    )
+
+
+class ModelNotFoundError(AppError):
+    spec = ErrorSpec(
+        http_status=HTTPStatus.NOT_FOUND,
+        code="MODEL_NOT_FOUND",
+        message="Model not found.",
+    )
+
+
+class ProviderCredentialNotFoundError(AppError):
+    spec = ErrorSpec(
+        http_status=HTTPStatus.NOT_FOUND,
+        code="PROVIDER_CREDENTIAL_NOT_FOUND",
+        message="Provider credential not found.",
+    )
+
+
+class ProviderCredentialInvalidError(AppError):
+    spec = ErrorSpec(
+        http_status=HTTPStatus.UNPROCESSABLE_ENTITY,
+        code="PROVIDER_CREDENTIAL_INVALID",
+        message="Provider credential is invalid.",
     )
 
 
@@ -73,6 +97,9 @@ ERROR_TYPE_MAP: dict[Type[AppError], ErrorSpec] = {
     UserDisabledError: UserDisabledError.spec,
     AccessDeniedError: AccessDeniedError.spec,
     RuntimeNotFoundError: RuntimeNotFoundError.spec,
-    CredentialNotFoundError: CredentialNotFoundError.spec,
+    UserNotFoundError: UserNotFoundError.spec,
+    ModelNotFoundError: ModelNotFoundError.spec,
+    ProviderCredentialNotFoundError: ProviderCredentialNotFoundError.spec,
+    ProviderCredentialInvalidError: ProviderCredentialInvalidError.spec,
 }
 

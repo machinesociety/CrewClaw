@@ -2,114 +2,107 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from app.core.errors import CredentialNotFoundError
-from app.domain.credentials import Credential, CredentialStatus
-from app.domain.models import (
-    BindingSource,
-    Model,
-    ModelBinding,
-    ModelSource,
-    UsageSummary,
+from app.core.errors import (
+    ModelNotFoundError,
+    ProviderCredentialInvalidError,
+    ProviderCredentialNotFoundError,
 )
+from app.domain.credentials import ProviderCredential, ProviderCredentialStatus
+from app.domain.models import Model, UsageSummary
 from app.repositories.model_repository import (
-    CredentialRepository,
-    ModelBindingRepository,
     ModelRepository,
+    ProviderCredentialRepository,
     UsageRepository,
 )
 
 
 class ModelService:
     """
-    模型与绑定相关服务。
-
-    当前实现基于轻量仓储：
-    - 模型列表来自 ModelRepository（平台默认模型为主）。
-    - 绑定关系存储在 ModelBindingRepository。
-    - 凭据元数据来自 CredentialRepository，用于校验归属。
+    模型治理与用户侧只读模型列表服务。
     """
 
     def __init__(
         self,
         model_repo: ModelRepository,
-        binding_repo: ModelBindingRepository,
-        credential_repo: CredentialRepository,
     ) -> None:
         self._model_repo = model_repo
-        self._binding_repo = binding_repo
-        self._credential_repo = credential_repo
 
     def list_models_for_user(self, user_id: str) -> list[Model]:
         _ = user_id
+        return [
+            model
+            for model in self._model_repo.list_models()
+            if model.enabled and model.user_visible
+        ]
+
+    def list_models_for_admin(self) -> list[Model]:
         return self._model_repo.list_models()
 
-    def list_bindings_for_user(self, user_id: str) -> list[ModelBinding]:
-        return self._binding_repo.list_bindings_for_user(user_id)
-
-    def update_binding(
+    def update_model(
         self,
-        user_id: str,
         model_id: str,
-        credential_id: str | None,
-    ) -> ModelBinding:
-        models = {m.model_id: m for m in self._model_repo.list_models()}
-        if model_id not in models:
-            raise CredentialNotFoundError("Model not found.")
+        *,
+        enabled: bool | None = None,
+        user_visible: bool | None = None,
+        default_route: str | None = None,
+        default_provider_credential_id: str | None = None,
+    ) -> Model:
+        model = self._model_repo.get_model(model_id)
+        if model is None:
+            raise ModelNotFoundError()
 
-        if credential_id is not None:
-            cred = self._credential_repo.get_credential(user_id, credential_id)
-            if cred is None:
-                raise CredentialNotFoundError()
+        if enabled is not None:
+            model.enabled = enabled
+        if user_visible is not None:
+            model.user_visible = user_visible
+        if default_route is not None:
+            model.default_route = default_route
+        if default_provider_credential_id is not None:
+            model.default_provider_credential_id = default_provider_credential_id
 
-        binding = ModelBinding(
-            user_id=user_id,
-            model_id=model_id,
-            credential_id=credential_id,
-            source=BindingSource.USER_OWNED,
-        )
-        self._binding_repo.upsert_binding(binding)
-        return binding
+        self._model_repo.save(model)
+        return model
 
 
-class CredentialService:
+class ProviderCredentialService:
     """
-    凭据托管与校验服务。
-
-    当前实现：
-    - 仅保存凭据元数据，不持久化明文 secret。
-    - verify 时模拟一次成功校验，更新状态与 last_validated_at。
+    平台 provider 凭据治理服务。
     """
 
-    def __init__(self, credential_repo: CredentialRepository) -> None:
+    def __init__(self, credential_repo: ProviderCredentialRepository) -> None:
         self._credential_repo = credential_repo
 
-    def list_credentials(self, user_id: str) -> list[Credential]:
-        return self._credential_repo.list_credentials_for_user(user_id)
+    def list_credentials(self) -> list[ProviderCredential]:
+        return self._credential_repo.list_credentials()
 
-    def create_credential(self, user_id: str, name: str, secret: str) -> Credential:
-        _ = secret
-        credential = Credential(
-            credential_id=f"cred_{abs(hash((user_id, name, secret)))}",
-            user_id=user_id,
+    def create_credential(self, provider: str, name: str, secret: str) -> ProviderCredential:
+        if not secret.strip():
+            raise ProviderCredentialInvalidError()
+
+        credential = ProviderCredential(
+            credential_id=f"pc_{abs(hash((provider, name, secret)))}",
+            provider=provider,
             name=name,
-            status=CredentialStatus.ACTIVE,
+            status=ProviderCredentialStatus.ACTIVE,
             last_validated_at=None,
         )
         self._credential_repo.save(credential)
         return credential
 
-    def verify_credential(self, user_id: str, credential_id: str) -> Credential:
-        cred = self._credential_repo.get_credential(user_id, credential_id)
+    def verify_credential(self, credential_id: str) -> ProviderCredential:
+        cred = self._credential_repo.get_credential(credential_id)
         if cred is None:
-            raise CredentialNotFoundError()
+            raise ProviderCredentialNotFoundError()
 
-        cred.status = CredentialStatus.ACTIVE
+        cred.status = ProviderCredentialStatus.ACTIVE
         cred.last_validated_at = datetime.now(timezone.utc).isoformat()
         self._credential_repo.save(cred)
         return cred
 
-    def delete_credential(self, user_id: str, credential_id: str) -> None:
-        self._credential_repo.delete(user_id, credential_id)
+    def delete_credential(self, credential_id: str) -> None:
+        if self._credential_repo.get_credential(credential_id) is None:
+            raise ProviderCredentialNotFoundError()
+        self._credential_repo.delete(credential_id)
 
 
 class UsageService:
@@ -124,4 +117,12 @@ class UsageService:
 
     def get_user_usage(self, user_id: str) -> UsageSummary:
         return self._usage_repo.get_user_usage(user_id)
+
+    def get_total_usage(self) -> UsageSummary:
+        summaries = self._usage_repo.list_usage()
+        return UsageSummary(
+            user_id="platform",
+            total_tokens=sum(item.total_tokens for item in summaries),
+            used_tokens=sum(item.used_tokens for item in summaries),
+        )
 

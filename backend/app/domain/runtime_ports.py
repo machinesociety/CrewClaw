@@ -5,7 +5,7 @@ from typing import Protocol
 
 from app.domain.runtime import RuntimeTask
 from app.schemas.internal import ModelConfigResponse
-from app.schemas.runtime import UserRuntimeBinding
+from app.schemas.runtime import RuntimeBindingSnapshot
 
 
 @dataclass
@@ -22,10 +22,10 @@ class ModelConfig:
     @classmethod
     def from_response(cls, resp: ModelConfigResponse) -> "ModelConfig":
         return cls(
-            base_url=resp.base_url,
+            base_url=resp.baseUrl,
             models=resp.models,
-            gateway_access_token_ref=resp.gateway_access_token_ref,
-            config_render_version=resp.config_render_version,
+            gateway_access_token_ref=resp.gatewayAccessTokenRef,
+            config_render_version=resp.configRenderVersion,
         )
 
 
@@ -34,7 +34,7 @@ class UserRuntimeBindingServicePort(Protocol):
     模块 3 访问 UserRuntimeBinding 的抽象端口。
     """
 
-    def ensure_binding(self, user_id: str) -> UserRuntimeBinding:
+    def ensure_binding(self, user_id: str) -> RuntimeBindingSnapshot:
         ...
 
     def patch_binding_state(
@@ -45,7 +45,7 @@ class UserRuntimeBindingServicePort(Protocol):
         browser_url: str | None,
         internal_endpoint: str | None,
         last_error: str | None,
-    ) -> UserRuntimeBinding | None:
+    ) -> RuntimeBindingSnapshot | None:
         ...
 
 

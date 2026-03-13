@@ -1,30 +1,31 @@
-from typing import Any
-
 from pydantic import BaseModel
 
 
 class ModelItem(BaseModel):
-    model_id: str
+    modelId: str
     name: str
     provider: str | None = None
     source: str
     enabled: bool = True
+    defaultRoute: str | None = None
 
 
 class ModelListResponse(BaseModel):
-    models: list[dict[str, Any]]
+    models: list[ModelItem]
 
 
-class ModelBindingItem(BaseModel):
-    model_id: str
-    credential_id: str | None = None
-    source: str
+class AdminModelItem(ModelItem):
+    userVisible: bool = True
+    defaultProviderCredentialId: str | None = None
 
 
-class ModelBindingsResponse(BaseModel):
-    bindings: list[ModelBindingItem]
+class AdminModelListResponse(BaseModel):
+    models: list[AdminModelItem]
 
 
-class UpdateModelBindingRequest(BaseModel):
-    credential_id: str | None = None
+class UpdateAdminModelRequest(BaseModel):
+    enabled: bool | None = None
+    userVisible: bool | None = None
+    defaultRoute: str | None = None
+    defaultProviderCredentialId: str | None = None
 

@@ -10,7 +10,7 @@ from app.domain.runtime_ports import (
     RuntimeTaskRepository,
     UserRuntimeBindingServicePort,
 )
-from app.schemas.runtime import DesiredState, ObservedState, UserRuntimeBinding
+from app.schemas.runtime import DesiredState, ObservedState, RuntimeBindingSnapshot
 from app.services.runtime_config_renderer import RuntimeConfigRenderer
 
 
@@ -206,7 +206,7 @@ class UserRuntimeBindingServiceAdapter(UserRuntimeBindingServicePort):
         self._ensure_binding_fn = ensure_binding_fn
         self._patch_state_fn = patch_state_fn
 
-    def ensure_binding(self, user_id: str) -> UserRuntimeBinding:
+    def ensure_binding(self, user_id: str) -> RuntimeBindingSnapshot:
         return self._ensure_binding_fn(user_id)
 
     def patch_binding_state(
@@ -217,7 +217,7 @@ class UserRuntimeBindingServiceAdapter(UserRuntimeBindingServicePort):
         browser_url: str | None,
         internal_endpoint: str | None,
         last_error: str | None,
-    ) -> UserRuntimeBinding | None:
+    ) -> RuntimeBindingSnapshot | None:
         return self._patch_state_fn(
             user_id=user_id,
             desired_state=desired_state,

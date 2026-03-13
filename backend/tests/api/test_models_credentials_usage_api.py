@@ -1,59 +1,44 @@
 from fastapi import status
-
-from app.core.dependencies import get_auth_context
-from app.core.auth import AuthContext
-
+from app.repositories.model_repository import reset_inmemory_model_repositories
 
 def _auth_headers(subject: str = "authentik:user1") -> dict[str, str]:
     return {"X-Authentik-Subject": subject}
 
 
-def test_models_list_and_bindings_empty(client):
+def test_models_list_and_usage_summary(client):
+    reset_inmemory_model_repositories()
     resp = client.get("/api/v1/models", headers=_auth_headers())
     assert resp.status_code == status.HTTP_200_OK
     data = resp.json()
     assert "models" in data
     assert data["models"]
+    first_model = data["models"][0]
+    assert "modelId" in first_model
+    assert "defaultRoute" in first_model
+    assert "internalEndpoint" not in first_model
 
-    resp2 = client.get("/api/v1/models/bindings", headers=_auth_headers())
-    assert resp2.status_code == status.HTTP_200_OK
-    data2 = resp2.json()
-    assert data2["bindings"] == []
-
-
-def test_credentials_and_binding_flow(client):
-    # 创建凭据
-    resp_create = client.post(
-        "/api/v1/credentials",
-        headers=_auth_headers(),
-        json={"name": "default-openai", "secret": "sk-..."},
-    )
-    assert resp_create.status_code == status.HTTP_201_CREATED
-    cred = resp_create.json()
-
-    # 列表中可见
-    resp_list = client.get("/api/v1/credentials", headers=_auth_headers())
-    assert resp_list.status_code == status.HTTP_200_OK
-    creds = resp_list.json()["credentials"]
-    assert any(c["credential_id"] == cred["credential_id"] for c in creds)
-
-    # 绑定到模型
-    resp_bind = client.put(
-        "/api/v1/models/gpt-4-mini/binding",
-        headers=_auth_headers(),
-        json={"credential_id": cred["credential_id"]},
-    )
-    assert resp_bind.status_code == status.HTTP_200_OK
-    bindings = resp_bind.json()["bindings"]
-    assert any(
-        b["model_id"] == "gpt-4-mini" and b["credential_id"] == cred["credential_id"]
-        for b in bindings
-    )
-
-    # 用量摘要
     resp_usage = client.get("/api/v1/usage/summary", headers=_auth_headers())
     assert resp_usage.status_code == status.HTTP_200_OK
     usage = resp_usage.json()
-    assert usage["user_id"]
-    assert usage["total_tokens"] >= 0
+    assert usage["userId"]
+    assert usage["totalTokens"] >= 0
+    assert usage["usedTokens"] >= 0
+
+
+def test_removed_user_configuration_interfaces_are_not_exposed(client):
+    reset_inmemory_model_repositories()
+    headers = _auth_headers()
+
+    assert client.get("/api/v1/models/bindings", headers=headers).status_code == status.HTTP_404_NOT_FOUND
+    assert client.put(
+        "/api/v1/models/gpt-4-mini/binding",
+        headers=headers,
+        json={"credentialId": "cred_001"},
+    ).status_code == status.HTTP_404_NOT_FOUND
+    assert client.get("/api/v1/credentials", headers=headers).status_code == status.HTTP_404_NOT_FOUND
+    assert client.post(
+        "/api/v1/credentials",
+        headers=headers,
+        json={"provider": "openai", "name": "default", "secret": "sk-test"},
+    ).status_code == status.HTTP_404_NOT_FOUND
 

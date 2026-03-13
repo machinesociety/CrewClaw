@@ -8,7 +8,7 @@ def _auth_headers(subject: str = "authentik:workspace-user") -> dict[str, str]:
 
 
 def _sync_user(client, subject: str) -> str:
-    resp = client.post("/internal/users/sync", json={"subject_id": subject})
+    resp = client.post("/internal/users/sync", json={"subjectId": subject})
     assert resp.status_code == status.HTTP_200_OK
     return resp.json()["userId"]
 
@@ -26,6 +26,7 @@ def test_workspace_entry_no_binding(client_with_inmemory):
     assert data["runtimeId"] is None
     assert data["browserUrl"] is None
     assert data["reason"] == "runtime_not_found"
+    assert "internalEndpoint" not in data
 
 
 def test_workspace_entry_not_running_and_ready(client_with_inmemory):
@@ -51,11 +52,11 @@ def test_workspace_entry_not_running_and_ready(client_with_inmemory):
     resp_update_creating = client.patch(
         f"/internal/users/{user_id}/runtime-binding/state",
         json={
-            "desired_state": DomainDesiredState.RUNNING.value,
-            "observed_state": DomainObservedState.CREATING.value,
-            "browser_url": None,
-            "internal_endpoint": None,
-            "last_error": None,
+            "desiredState": DomainDesiredState.RUNNING.value,
+            "observedState": DomainObservedState.CREATING.value,
+            "browserUrl": None,
+            "internalEndpoint": None,
+            "lastError": None,
         },
     )
     assert resp_update_creating.status_code == status.HTTP_200_OK
@@ -71,11 +72,11 @@ def test_workspace_entry_not_running_and_ready(client_with_inmemory):
     resp_update_running = client.patch(
         f"/internal/users/{user_id}/runtime-binding/state",
         json={
-            "desired_state": DomainDesiredState.RUNNING.value,
-            "observed_state": DomainObservedState.RUNNING.value,
-            "browser_url": "https://u-001.crewclaw.example.com",
-            "internal_endpoint": "http://crewclaw-u001:3000",
-            "last_error": None,
+            "desiredState": DomainDesiredState.RUNNING.value,
+            "observedState": DomainObservedState.RUNNING.value,
+            "browserUrl": "https://u-001.crewclaw.example.com",
+            "internalEndpoint": "http://crewclaw-u001:3000",
+            "lastError": None,
         },
     )
     assert resp_update_running.status_code == status.HTTP_200_OK
@@ -101,11 +102,11 @@ def test_workspace_entry_error_reason(client_with_inmemory):
     resp_update_error = client.patch(
         f"/internal/users/{user_id}/runtime-binding/state",
         json={
-            "desired_state": DomainDesiredState.RUNNING.value,
-            "observed_state": DomainObservedState.ERROR.value,
-            "browser_url": None,
-            "internal_endpoint": None,
-            "last_error": "boom",
+            "desiredState": DomainDesiredState.RUNNING.value,
+            "observedState": DomainObservedState.ERROR.value,
+            "browserUrl": None,
+            "internalEndpoint": None,
+            "lastError": "boom",
         },
     )
     assert resp_update_error.status_code == status.HTTP_200_OK
@@ -117,4 +118,31 @@ def test_workspace_entry_error_reason(client_with_inmemory):
     assert data["runtimeId"] == runtime_id
     assert data["browserUrl"] is None
     assert data["reason"] == "runtime_error"
+
+
+def test_workspace_entry_disabled_user_returns_403(client):
+    from app.core.dependencies import get_sqlalchemy_user_repository
+    from app.domain.users import User, UserRole, UserStatus
+    from app.repositories.user_repository import InMemoryUserRepository
+
+    repo = InMemoryUserRepository()
+    repo.save(
+        User(
+            user_id="u_disabled",
+            subject_id="authentik:workspace-disabled",
+            tenant_id="t_default",
+            role=UserRole.USER,
+            status=UserStatus.DISABLED,
+        )
+    )
+    client.app.dependency_overrides[get_sqlalchemy_user_repository] = lambda: repo
+    try:
+        resp = client.get(
+            "/api/v1/workspace-entry",
+            headers=_auth_headers("authentik:workspace-disabled"),
+        )
+        assert resp.status_code == status.HTTP_403_FORBIDDEN
+        assert resp.json()["code"] == "USER_DISABLED"
+    finally:
+        client.app.dependency_overrides.pop(get_sqlalchemy_user_repository, None)
 

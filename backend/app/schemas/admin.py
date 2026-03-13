@@ -6,19 +6,37 @@ class UpdateUserStatusRequest(BaseModel):
 
 
 class AdminUserRuntimeResponse(BaseModel):
-    runtime_id: str
-    desired_state: str
-    observed_state: str
-    browser_url: str | None = None
-    internal_endpoint: str | None = None
-    last_error: str | None = None
+    runtimeId: str
+    volumeId: str
+    imageRef: str
+    desiredState: str
+    observedState: str
+    browserUrl: str | None = None
+    internalEndpoint: str | None = None
+    retentionPolicy: str
+    lastError: str | None = None
 
 
-class AdminUserCredentialsResponse(BaseModel):
-    credentials: list[dict]
+class AdminUserListItem(BaseModel):
+    userId: str
+    subjectId: str
+    role: str
+    status: str
+    runtimeObservedState: str | None = None
+    lastLoginAt: str | None = None
+
+
+class AdminUserDetailResponse(BaseModel):
+    userId: str
+    subjectId: str
+    tenantId: str
+    role: str
+    status: str
+    createdAt: str | None = None
+    updatedAt: str | None = None
 
 
 class AdminUsageSummaryResponse(BaseModel):
-    total_tokens: int
-    used_tokens: int
+    totalTokens: int
+    usedTokens: int
 

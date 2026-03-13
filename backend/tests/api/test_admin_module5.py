@@ -3,16 +3,42 @@ from fastapi import status
 from app.core.dependencies import (
     get_runtime_service,
     get_sqlalchemy_user_repository,
+    get_runtime_binding_repository,
     get_user_service,
 )
-from app.domain.users import User, UserRole, UserStatus
+from app.domain.models import UsageSummary
+from app.domain.users import (
+    DesiredState,
+    ObservedState,
+    RetentionPolicy,
+    User,
+    UserRole,
+    UserRuntimeBinding,
+    UserStatus,
+)
+from app.repositories.model_repository import (
+    get_inmemory_model_repository,
+    get_inmemory_provider_credential_repository,
+    get_inmemory_usage_repository,
+    reset_inmemory_model_repositories,
+)
 from app.repositories.user_repository import InMemoryUserRepository
 from app.services.user_service import UserService
 
 
+class _InMemoryBindingRepo:
+    def __init__(self) -> None:
+        self._bindings: dict[str, UserRuntimeBinding] = {}
+
+    def get_by_user_id(self, user_id: str):
+        return self._bindings.get(user_id)
+
+    def save(self, binding):
+        self._bindings[binding.user_id] = binding
+
+
 def _setup_admin_user_repo():
     repo = InMemoryUserRepository()
-    # admin 用户
     repo.save(
         User(
             user_id="u_admin",
@@ -22,7 +48,6 @@ def _setup_admin_user_repo():
             status=UserStatus.ACTIVE,
         )
     )
-    # 普通用户
     repo.save(
         User(
             user_id="u_user",
@@ -35,14 +60,35 @@ def _setup_admin_user_repo():
     return repo
 
 
-def test_admin_permission_required_for_admin_routes(client):
-    """
-    admin 权限判断：非 admin 访问 /admin 路由返回 403 ACCESS_DENIED。
-    """
+def _setup_admin_services():
+    repo = _setup_admin_user_repo()
+    binding_repo = _InMemoryBindingRepo()
+    binding_repo.save(
+        UserRuntimeBinding(
+            user_id="u_user",
+            runtime_id="rt_u_user",
+            volume_id="vol_u_user",
+            image_ref="crewclaw-runtime-wrapper:openclaw-1.0.0",
+            desired_state=DesiredState.RUNNING,
+            observed_state=ObservedState.RUNNING,
+            retention_policy=RetentionPolicy.PRESERVE_WORKSPACE,
+            browser_url="https://u-user.crewclaw.example.com",
+            internal_endpoint="http://crewclaw-u-user:3000",
+            last_error=None,
+        )
+    )
+    service = UserService(
+        user_repo=repo,
+        binding_repo=binding_repo,
+        default_image_ref="crewclaw-runtime-wrapper:openclaw-1.0.0",
+        default_retention_policy="preserve_workspace",
+    )
+    return repo, binding_repo, service
 
+
+def test_admin_permission_required_for_admin_routes(client):
     repo = _setup_admin_user_repo()
     client.app.dependency_overrides[get_sqlalchemy_user_repository] = lambda: repo
-    # 使用普通用户 subject
     headers = {"X-Authentik-Subject": "authentik:user"}
 
     try:
@@ -55,45 +101,39 @@ def test_admin_permission_required_for_admin_routes(client):
 
 
 def test_admin_can_list_and_get_user_detail(client):
-    """
-    管理员可以查看用户列表和详情。
-    """
-
-    repo = _setup_admin_user_repo()
-    service = UserService(
-        user_repo=repo,
-        binding_repo=None,  # type: ignore[arg-type]
-        default_image_ref="crewclaw-runtime-wrapper:openclaw-1.0.0",
-        default_retention_policy="preserve_workspace",
-    )
+    repo, binding_repo, service = _setup_admin_services()
     client.app.dependency_overrides[get_sqlalchemy_user_repository] = lambda: repo
+    client.app.dependency_overrides[get_runtime_binding_repository] = lambda: binding_repo
     client.app.dependency_overrides[get_user_service] = lambda: service
 
     headers = {"X-Authentik-Subject": "authentik:admin"}
     try:
-        # 列表
         resp = client.get("/api/v1/admin/users", headers=headers)
         assert resp.status_code == status.HTTP_200_OK
         users = resp.json()
         assert any(u["userId"] == "u_user" for u in users)
+        assert any(u["runtimeObservedState"] == "running" for u in users if u["userId"] == "u_user")
 
-        # 详情
         detail = client.get("/api/v1/admin/users/u_user", headers=headers)
         assert detail.status_code == status.HTTP_200_OK
         data = detail.json()
         assert data["userId"] == "u_user"
         assert data["status"] == "active"
+
+        runtime_resp = client.get("/api/v1/admin/users/u_user/runtime", headers=headers)
+        assert runtime_resp.status_code == status.HTTP_200_OK
+        runtime = runtime_resp.json()
+        assert runtime["runtimeId"] == "rt_u_user"
+        assert runtime["volumeId"] == "vol_u_user"
+        assert runtime["imageRef"]
+        assert runtime["internalEndpoint"] == "http://crewclaw-u-user:3000"
+        assert runtime["retentionPolicy"] == "preserve_workspace"
     finally:
         client.app.dependency_overrides.clear()
 
 
 def test_admin_update_user_status_and_disabled_affects_frontend(client):
-    """
-    用户状态修改：admin 禁用用户后，前台业务接口返回 403 USER_DISABLED。
-    """
-
     repo = InMemoryUserRepository()
-    # 管理员
     repo.save(
         User(
             user_id="u_admin",
@@ -103,7 +143,6 @@ def test_admin_update_user_status_and_disabled_affects_frontend(client):
             status=UserStatus.ACTIVE,
         )
     )
-    # 目标用户
     repo.save(
         User(
             user_id="u_target",
@@ -114,9 +153,10 @@ def test_admin_update_user_status_and_disabled_affects_frontend(client):
         )
     )
 
+    binding_repo = _InMemoryBindingRepo()
     service = UserService(
         user_repo=repo,
-        binding_repo=None,  # type: ignore[arg-type]
+        binding_repo=binding_repo,
         default_image_ref="crewclaw-runtime-wrapper:openclaw-1.0.0",
         default_retention_policy="preserve_workspace",
     )
@@ -128,6 +168,7 @@ def test_admin_update_user_status_and_disabled_affects_frontend(client):
             return None
 
     client.app.dependency_overrides[get_sqlalchemy_user_repository] = lambda: repo
+    client.app.dependency_overrides[get_runtime_binding_repository] = lambda: binding_repo
     client.app.dependency_overrides[get_user_service] = lambda: service
     client.app.dependency_overrides[get_runtime_service] = lambda: _DummyRuntimeService()
 
@@ -135,7 +176,6 @@ def test_admin_update_user_status_and_disabled_affects_frontend(client):
         admin_headers = {"X-Authentik-Subject": "authentik:admin"}
         target_headers = {"X-Authentik-Subject": "authentik:target"}
 
-        # admin 禁用用户
         resp = client.patch(
             "/api/v1/admin/users/u_target/status",
             headers=admin_headers,
@@ -145,11 +185,82 @@ def test_admin_update_user_status_and_disabled_affects_frontend(client):
         data = resp.json()
         assert data["status"] == "disabled"
 
-        # 前台访问业务接口应返回 403 USER_DISABLED
         quota_resp = client.get("/api/v1/users/me/quota", headers=target_headers)
         assert quota_resp.status_code == status.HTTP_403_FORBIDDEN
         qdata = quota_resp.json()
         assert qdata["code"] == "USER_DISABLED"
+    finally:
+        client.app.dependency_overrides.clear()
+
+
+def test_admin_can_manage_models_provider_credentials_and_usage(client):
+    reset_inmemory_model_repositories()
+    repo, binding_repo, service = _setup_admin_services()
+    usage_repo = get_inmemory_usage_repository()
+    usage_repo.set_user_usage(UsageSummary(user_id="u_user", total_tokens=123, used_tokens=120))
+
+    client.app.dependency_overrides[get_sqlalchemy_user_repository] = lambda: repo
+    client.app.dependency_overrides[get_runtime_binding_repository] = lambda: binding_repo
+    client.app.dependency_overrides[get_user_service] = lambda: service
+
+    headers = {"X-Authentik-Subject": "authentik:admin"}
+    try:
+        models_resp = client.get("/api/v1/admin/models", headers=headers)
+        assert models_resp.status_code == status.HTTP_200_OK
+        models = models_resp.json()["models"]
+        assert any(model["modelId"] == "gpt-4-mini" for model in models)
+
+        update_resp = client.put(
+            "/api/v1/admin/models/gpt-4-mini",
+            headers=headers,
+            json={
+                "enabled": True,
+                "userVisible": False,
+                "defaultRoute": "openai/gpt-4-mini-alt",
+                "defaultProviderCredentialId": "pc_manual",
+            },
+        )
+        assert update_resp.status_code == status.HTTP_200_OK
+        updated = update_resp.json()
+        assert updated["userVisible"] is False
+        assert updated["defaultRoute"] == "openai/gpt-4-mini-alt"
+
+        create_cred_resp = client.post(
+            "/api/v1/admin/provider-credentials",
+            headers=headers,
+            json={"provider": "openai", "name": "prod-openai", "secret": "sk-admin"},
+        )
+        assert create_cred_resp.status_code == status.HTTP_201_CREATED
+        credential = create_cred_resp.json()
+        assert credential["credentialId"]
+        assert credential["provider"] == "openai"
+        assert "secret" not in credential
+
+        list_cred_resp = client.get("/api/v1/admin/provider-credentials", headers=headers)
+        assert list_cred_resp.status_code == status.HTTP_200_OK
+        credentials = list_cred_resp.json()["credentials"]
+        assert any(item["credentialId"] == credential["credentialId"] for item in credentials)
+
+        verify_resp = client.post(
+            f"/api/v1/admin/provider-credentials/{credential['credentialId']}/verify",
+            headers=headers,
+        )
+        assert verify_resp.status_code == status.HTTP_200_OK
+        verify = verify_resp.json()
+        assert verify["verified"] is True
+        assert verify["status"] == "active"
+
+        usage_resp = client.get("/api/v1/admin/usage/summary", headers=headers)
+        assert usage_resp.status_code == status.HTTP_200_OK
+        usage = usage_resp.json()
+        assert usage["totalTokens"] == 123
+        assert usage["usedTokens"] == 120
+
+        delete_resp = client.delete(
+            f"/api/v1/admin/provider-credentials/{credential['credentialId']}",
+            headers=headers,
+        )
+        assert delete_resp.status_code == status.HTTP_204_NO_CONTENT
     finally:
         client.app.dependency_overrides.clear()
 

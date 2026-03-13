@@ -18,23 +18,9 @@ class Model:
     provider: str | None
     source: ModelSource
     enabled: bool = True
-
-
-class BindingSource(str, Enum):
-    PLATFORM_DEFAULT = "platform_default"
-    USER_OWNED = "user_owned"
-
-
-@dataclass
-class ModelBinding:
-    """
-    模型与凭据的绑定关系。
-    """
-
-    user_id: str
-    model_id: str
-    credential_id: str | None
-    source: BindingSource
+    user_visible: bool = True
+    default_route: str | None = None
+    default_provider_credential_id: str | None = None
 
 
 @dataclass
@@ -48,4 +34,5 @@ class UsageSummary:
 
     user_id: str
     total_tokens: int
+    used_tokens: int = 0
 

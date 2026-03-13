@@ -5,7 +5,7 @@ from fastapi import status
 def test_internal_users_sync_and_binding_ensure(client_with_inmemory):
     client = client_with_inmemory
 
-    resp = client.post("/internal/users/sync", json={"subject_id": "authentik:sync-user"})
+    resp = client.post("/internal/users/sync", json={"subjectId": "authentik:sync-user"})
     assert resp.status_code == status.HTTP_200_OK
     data = resp.json()
     assert "userId" in data
@@ -17,8 +17,10 @@ def test_internal_users_sync_and_binding_ensure(client_with_inmemory):
     binding = resp2.json()
     assert binding["runtimeId"].startswith("rt_")
     assert binding["volumeId"].startswith("vol_")
+    assert binding["imageRef"]
     assert binding["desiredState"] == "stopped"
     assert binding["observedState"] == "stopped"
+    assert binding["retentionPolicy"] == "preserve_workspace"
 
     resp3 = client.post(f"/internal/users/{user_id}/runtime-binding/ensure")
     assert resp3.status_code == status.HTTP_200_OK
@@ -30,7 +32,7 @@ def test_internal_users_sync_and_binding_ensure(client_with_inmemory):
 def test_user_runtime_and_status_and_workspace_entry(client_with_inmemory):
     client = client_with_inmemory
 
-    resp_sync = client.post("/internal/users/sync", json={"subject_id": "authentik:user1"})
+    resp_sync = client.post("/internal/users/sync", json={"subjectId": "authentik:user1"})
     assert resp_sync.status_code == status.HTTP_200_OK
     user_id = resp_sync.json()["userId"]
 
@@ -42,6 +44,7 @@ def test_user_runtime_and_status_and_workspace_entry(client_with_inmemory):
     data_binding = resp_binding.json()
     assert data_binding["userId"] == user_id
     assert data_binding["runtime"]["runtimeId"].startswith("rt_")
+    assert "internalEndpoint" not in data_binding["runtime"]
 
     resp_status = client.get("/api/v1/users/me/runtime/status", headers=headers)
     assert resp_status.status_code == status.HTTP_200_OK
@@ -55,3 +58,4 @@ def test_user_runtime_and_status_and_workspace_entry(client_with_inmemory):
     data_workspace = resp_workspace.json()
     assert data_workspace["runtimeId"] == data_status["runtimeId"]
     assert data_workspace["ready"] is False
+    assert "internalEndpoint" not in data_workspace

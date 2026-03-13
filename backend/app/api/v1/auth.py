@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 
 from app.core.auth import AuthContext
-from app.core.dependencies import get_auth_context
+from app.core.dependencies import get_auth_context, require_active_user
 from app.schemas.auth import AccessCheckResponse, AuthMeResponse
 
 
@@ -24,10 +24,8 @@ async def get_current_user(ctx: AuthContext = Depends(get_auth_context)) -> Auth
 
 
 @router.get("/auth/access", response_model=AccessCheckResponse)
-async def check_access(ctx: AuthContext = Depends(get_auth_context)) -> AccessCheckResponse:
+async def check_access(ctx: AuthContext = Depends(require_active_user)) -> AccessCheckResponse:
     """检查当前用户是否可访问业务。"""
 
-    if ctx.isDisabled:
-        return AccessCheckResponse(allowed=False, reason="USER_DISABLED")
     return AccessCheckResponse(allowed=True, reason=None)
 

@@ -4,6 +4,7 @@ from app.core.dependencies import get_runtime_service, require_active_user
 from app.core.auth import AuthContext
 from app.domain.runtime import RuntimeAction
 from app.schemas.runtime import (
+    DeleteRuntimeRequest,
     RuntimeActionAcceptedResponse,
     RuntimeTaskResponse,
     TaskAction,
@@ -60,13 +61,15 @@ async def stop_runtime(
 
 @router.delete("/users/me/runtime", response_model=RuntimeActionAcceptedResponse, status_code=202)
 async def delete_runtime(
+    body: DeleteRuntimeRequest | None = None,
     ctx: AuthContext = Depends(require_active_user),
     svc: RuntimeService = Depends(get_runtime_service),
 ) -> RuntimeActionAcceptedResponse:
     """
     删除 runtime。
     """
-    task = svc.delete_runtime(ctx.userId)
+    retention_policy = body.retentionPolicy.value if body and body.retentionPolicy else None
+    task = svc.delete_runtime(ctx.userId, retention_policy=retention_policy)
     return RuntimeActionAcceptedResponse(
         taskId=task.task_id,
         action=TaskAction.delete,

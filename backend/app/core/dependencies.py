@@ -113,7 +113,7 @@ def get_runtime_service(
     """
 
     # 绑定服务适配到 Pydantic UserRuntimeBinding 视图
-    from app.schemas.runtime import UserRuntimeBinding as BindingSchema
+    from app.schemas.runtime import RuntimeBindingSnapshot as BindingSchema
     from app.schemas.internal import ModelConfigResponse
     from app.api.v1.internal import get_user_model_config as internal_get_model_config
 

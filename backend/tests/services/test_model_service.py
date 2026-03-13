@@ -1,49 +1,37 @@
-from app.domain.credentials import Credential, CredentialStatus
-from app.domain.models import BindingSource, Model, ModelSource
-from app.repositories.model_repository import (
-    InMemoryCredentialRepository,
-    InMemoryModelBindingRepository,
-    InMemoryModelRepository,
-)
-from app.services.model_service import CredentialService, ModelService, UsageService
+from app.domain.models import Model, ModelSource
+from app.repositories.model_repository import InMemoryModelRepository
+from app.services.model_service import ModelService
 
 
 def test_model_service_list_models():
     model_repo = InMemoryModelRepository()
-    binding_repo = InMemoryModelBindingRepository()
-    cred_repo = InMemoryCredentialRepository()
-    service = ModelService(model_repo, binding_repo, cred_repo)
+    service = ModelService(model_repo)
 
     models = service.list_models_for_user("u_001")
     assert models
     assert all(isinstance(m, Model) for m in models)
     assert {m.source for m in models} == {ModelSource.SHARED}
+    assert all(m.user_visible is True for m in models)
 
 
-def test_model_service_update_binding_and_list():
+def test_model_service_admin_update_affects_visibility():
     model_repo = InMemoryModelRepository()
-    binding_repo = InMemoryModelBindingRepository()
-    cred_repo = InMemoryCredentialRepository()
+    service = ModelService(model_repo)
 
-    # 先准备一个凭据
-    cred = Credential(
-        credential_id="cred_001",
-        user_id="u_001",
-        name="default-openai",
-        status=CredentialStatus.ACTIVE,
-        last_validated_at=None,
+    updated = service.update_model(
+        "gpt-4-mini",
+        enabled=False,
+        user_visible=False,
+        default_route="openai/alt-mini",
+        default_provider_credential_id="pc_001",
     )
-    cred_repo.save(cred)
+    assert updated.enabled is False
+    assert updated.user_visible is False
+    assert updated.default_route == "openai/alt-mini"
+    assert updated.default_provider_credential_id == "pc_001"
 
-    service = ModelService(model_repo, binding_repo, cred_repo)
-
-    binding = service.update_binding("u_001", "gpt-4-mini", "cred_001")
-    assert binding.user_id == "u_001"
-    assert binding.model_id == "gpt-4-mini"
-    assert binding.credential_id == "cred_001"
-    assert binding.source == BindingSource.USER_OWNED
-
-    bindings = service.list_bindings_for_user("u_001")
-    assert len(bindings) == 1
-    assert bindings[0].model_id == "gpt-4-mini"
+    assert service.list_models_for_user("u_001") == []
+    admin_models = service.list_models_for_admin()
+    assert len(admin_models) == 1
+    assert admin_models[0].model_id == "gpt-4-mini"
 

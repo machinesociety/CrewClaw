@@ -8,7 +8,7 @@ def _auth_headers(subject: str = "authentik:status-user") -> dict[str, str]:
 
 
 def _sync_user(client, subject: str) -> str:
-    resp = client.post("/internal/users/sync", json={"subject_id": subject})
+    resp = client.post("/internal/users/sync", json={"subjectId": subject})
     assert resp.status_code == status.HTTP_200_OK
     return resp.json()["userId"]
 
@@ -29,6 +29,10 @@ def test_runtime_status_without_binding(client_with_inmemory):
     assert data["browserUrl"] is None
     assert data["reason"] == "runtime_not_found"
     assert data["lastError"] is None
+    assert "internalEndpoint" not in data
+    assert "volumeId" not in data
+    assert "imageRef" not in data
+    assert "retentionPolicy" not in data
 
 
 def test_runtime_status_stopped_after_binding_ensure(client_with_inmemory):
@@ -65,11 +69,11 @@ def test_runtime_status_starting_and_error_reasons(client_with_inmemory):
     resp_update_creating = client.patch(
         f"/internal/users/{user_id}/runtime-binding/state",
         json={
-            "desired_state": DomainDesiredState.RUNNING.value,
-            "observed_state": DomainObservedState.CREATING.value,
-            "browser_url": None,
-            "internal_endpoint": None,
-            "last_error": None,
+            "desiredState": DomainDesiredState.RUNNING.value,
+            "observedState": DomainObservedState.CREATING.value,
+            "browserUrl": None,
+            "internalEndpoint": None,
+            "lastError": None,
         },
     )
     assert resp_update_creating.status_code == status.HTTP_200_OK
@@ -88,11 +92,11 @@ def test_runtime_status_starting_and_error_reasons(client_with_inmemory):
     resp_update_error = client.patch(
         f"/internal/users/{user_id}/runtime-binding/state",
         json={
-            "desired_state": DomainDesiredState.RUNNING.value,
-            "observed_state": DomainObservedState.ERROR.value,
-            "browser_url": None,
-            "internal_endpoint": None,
-            "last_error": "boom",
+            "desiredState": DomainDesiredState.RUNNING.value,
+            "observedState": DomainObservedState.ERROR.value,
+            "browserUrl": None,
+            "internalEndpoint": None,
+            "lastError": "boom",
         },
     )
     assert resp_update_error.status_code == status.HTTP_200_OK
@@ -107,4 +111,6 @@ def test_runtime_status_starting_and_error_reasons(client_with_inmemory):
     assert data_error["ready"] is False
     assert data_error["reason"] == "runtime_error"
     assert data_error["lastError"] == "boom"
+    assert "internalEndpoint" not in data_error
+    assert "volumeId" not in data_error
 

@@ -1,24 +1,27 @@
 from pydantic import BaseModel
 
 
-class CredentialItem(BaseModel):
-    credential_id: str
+class ProviderCredentialItem(BaseModel):
+    credentialId: str
+    provider: str
     name: str
     status: str
-    last_validated_at: str | None = None
+    verified: bool
+    lastValidatedAt: str | None = None
 
 
-class CredentialListResponse(BaseModel):
-    credentials: list[CredentialItem]
+class ProviderCredentialListResponse(BaseModel):
+    credentials: list[ProviderCredentialItem]
 
 
-class CreateCredentialRequest(BaseModel):
+class CreateProviderCredentialRequest(BaseModel):
+    provider: str
     name: str
     secret: str
 
 
-class VerifyCredentialResponse(BaseModel):
+class VerifyProviderCredentialResponse(BaseModel):
     verified: bool
     status: str
-    last_validated_at: str | None = None
+    lastValidatedAt: str | None = None
 
