@@ -1,64 +1,292 @@
 # CrewClaw
-<img width="1328" height="1328" alt="image" src="https://github.com/user-attachments/assets/3baf28c2-53a8-4f79-96c3-527c36631f7b" />
 
-## 项目介绍 
+> 🧠 The Control Plane for Team-based OpenClaw Workspaces
 
-* **CrewClaw** 是一个基于容器化技术的智能员工管理平台。  
-* **核心安全：** 为每一位人类员工分配一个专属的、隔离的容器，实现“一人一容器”的极致隔离与安全保障。  
-* **全局掌控：** 通过可视化的管理后台，管理者可以像查阅地图一样掌控全局，将原本不可见的 AI 协作过程转化为可监控、可审计、可复用的企业资产。
+CrewClaw is an open-source platform that enables teams to **securely provision, manage, and scale OpenClaw workspaces per user**, with a clean separation between control plane, runtime orchestration, and runtime environments.
 
-## 项目亮点
+Built for teams—not just individuals.
 
-* 🛡️ 一人一容器
-    * 每位员工拥有独立的沙箱环境，数据互不干扰，杜绝隐私泄露。  
-    * 根据员工负载自动伸缩计算资源，闲时休眠，忙时爆发。  
-    * 员工的“数字分身”状态实时保存，随时唤醒，无缝接续工作。  
+---
 
-* 透明管理后台  
-告别黑盒操作，CrewClaw 提供全链路可视化管理控制台  
+## ✨ Why CrewClaw?
 
-  *  🗺️ 实时监控地图  
-        像查看交通地图一样，直观看到所有“龙虾”的在线状态（绿色/红色）。  
-        实时显示 CPU、内存及网络资源占用率，快速定位性能瓶颈。
-     
-  * 📜 全量审计日志
-        记录每一次关键操作：文件修改、代码提交、外部 API 调用、Prompt 输入输出。  
-        满足企业级合规要求（GDPR/SOC2），让每一次 AI 决策都有据可查。
-     
-  * 📦 技能市场  
-        标准化封装：将通用业务逻辑（如“查询 CRM”、“生成周报”、“竞品分析”）封装为标准“技能包”。  
-        一键分发：管理员可将技能包一键推送至全员或特定部门，实现知识的高效复用与沉淀。  
-        版本管理：支持技能包的迭代更新与回滚，确保业务逻辑的一致性。  
+OpenClaw is powerful, but running it for a **team** introduces real challenges:
 
-## 项目架构
-- 统一入口：Traefik，采用子域名路由，把浏览器入口和内部服务地址分开管理。
-- 统一认证：Authentik，平台负责会话鉴权与身份上下文注入。
-- 平台层：控制面 API + 极简 Web UI，负责用户、状态、资源真相与管理后台。
-- 运行时：每用户一个 OpenClaw runtime 容器。
-- 生命周期管理：独立 runtime manager /provisioner，负责容器创建、停止、删除、挂载与状态查询。
-- 模型网关：LiteLLM + PostgreSQL，统一接公司模型、本地模型和用户自有凭据。
-- 本地模型：vLLM 为主，Ollama 作为补充。
-- 密钥管理：MVP 使用 secret file 注入；后续可接 OpenBao。
+* How do you manage **multiple users and workspaces**?
+* How do you isolate environments per user?
+* How do you handle **invitation flows, roles, and permissions**?
+* How do you securely expose runtime UIs?
+* How do you scale runtime lifecycle (start/stop/recover)?
 
-| 层级     | 核心组件                               | 职责                                                         |
-| -------- | -------------------------------------- | ------------------------------------------------------------ |
-| 入口层   | Traefik + Authentik                    | 统一外部访问、登录、会话识别与转发。                         |
-| 平台层   | CrewClaw 控制面                        | 用户同步、UserRuntimeBinding 管理、管理后台、工作台。        |
-| 编排层   | Runtime Orchestrator + Runtime Manager | 将 desiredState 落为容器实际状态。                           |
-| 运行时层 | Per-user OpenClaw runtime              | 用户自己的 workspace、state、auth profiles 与 agent runtime。 |
-| 模型层   | LiteLLM + PostgreSQL + vLLM/Ollama     | 统一模型出口、默认模型、凭据代理与 usage 归集。              |
+CrewClaw solves all of this.
 
-<img width="1039" height="1079" alt="image" src="https://github.com/user-attachments/assets/809b74a9-fb36-4c79-814f-5a405d5b18e0" />
+---
 
-## 快速开始
-```markdown
+## 🧩 Architecture Overview
+
+CrewClaw follows a **boundary-first architecture**: browser ingress, identity, control plane, runtime orchestration, per-user runtimes, and a unified model layer are kept distinct.
+
+At a high level:
+
+```text
+Browser
+  |
+  v
+Traefik -> Authentik -> CrewClaw Control Plane -> Runtime Orchestrator -> Runtime Manager -> Per-user OpenClaw Runtime
+                                      |
+                                      +-> Model Service / Credential Proxy -> LiteLLM -> vLLM / Ollama / upstream providers
+                                      |
+                                      +-> PostgreSQL
+```
+
+### Layers
+
+| Layer | Components | Role |
+| ----- | ---------- | ---- |
+| Entry | Traefik + Authentik | Routing, login, session verification, subdomain protection |
+| Platform | CrewClaw control plane + web UI | User sync, runtime truth, admin governance, workspace entry |
+| Orchestration | Runtime orchestrator + runtime manager | Desired-state reconciliation, config rendering, container lifecycle |
+| Runtime | Per-user OpenClaw runtime | User workspace, profiles, agent runtime |
+| Model | LiteLLM + PostgreSQL + vLLM/Ollama | Unified model access, credential proxying, usage aggregation |
+
+**Key design notes** (MVP): one runtime per user; `browserUrl` (user-facing) and `internalEndpoint` (platform/internal) stay separate; workspace URLs remain authenticated via Traefik/Authentik; the control plane does not directly operate the Docker socket—container lifecycle belongs to the runtime manager.
+
+For the full picture, see [ARCHITECTURE.md](ARCHITECTURE.md).
+
+### 1. Control Plane (CrewClaw)
+
+* User / Workspace / Role management
+* Invitation system
+* Runtime lifecycle as *business truth*
+* Integration with Authentik (identity)
+* Admin + User dashboard
+
+### 2. Runtime Orchestration (RuntimeManager)
+
+* Create / start / stop / delete runtimes
+* Container lifecycle management
+* Health checks & state reporting
+* Stateless execution layer
+
+### 3. Runtime Environment (OpenClaw Docker)
+
+* Per-user isolated runtime
+* Mounted workspace
+* Browser-accessible UI
+
+```
+User → CrewClaw → RuntimeManager → Runtime (OpenClaw)
+```
+
+---
+
+## 🚀 Key Features
+
+### 🏢 Team-first Design
+
+* Multi-user, multi-workspace support
+* Role-based access control
+* Invitation-driven onboarding
+
+### 🔐 Secure by Default
+
+* Authentik integration
+* Traefik + Outpost routing
+* Per-runtime isolation
+
+### ⚙️ Runtime Lifecycle Control
+
+* Declarative runtime state
+* Auto-recovery & status sync
+* Retention policies
+
+### 🌐 Browser-based Access
+
+* Each runtime exposes a secure UI
+* External & internal endpoints
+
+### 🧱 Clean Architecture
+
+* Control plane ≠ runtime ≠ orchestration
+* Fully decoupled layers
+
+---
+
+## 📦 Repositories
+
+This project is composed of multiple repos:
+
+### 🧠 crewclaw (this repo)
+
+> The control plane
+
+* API server
+* Admin / user dashboard
+* Business logic (users, workspaces, invitations)
+* Runtime lifecycle truth
+
+---
+
+### ⚙️ runtimemanager
+
+> Runtime orchestration engine
+
+* Handles runtime creation and lifecycle
+* Reports runtime status back to CrewClaw
+* Can run standalone or via Docker
+
+---
+
+### 🐳 openclaw-docker
+
+> Reference runtime image
+
+* Standard OpenClaw runtime environment
+* Preconfigured for CrewClaw integration
+
+---
+
+## 📚 Documentation
+
+| Document | Description |
+| -------- | ----------- |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | System layers, MVP design decisions, security boundaries |
+| [ROADMAP.md](ROADMAP.md) | Versioned milestones (v0.1–v0.5) and long-term direction |
+| [MVP_Contract.md](MVP_Contract.md) | MVP module boundaries, field enums, and integration contract (Chinese) |
+
+---
+
+## 🛠️ Quick Start
+
+> ⚠️ Full setup docs coming soon
+
+### Prerequisites
+
+* Docker
+* Authentik
+* Traefik (recommended)
+
+### Run (conceptual)
+
 ```bash
-# 1. 克隆仓库
-git clone https://github.com/your-org/crewclaw.git
-cd crewclaw
+# 1. Start CrewClaw
+# 2. Start RuntimeManager
+# 3. Deploy openclaw runtime image
+```
 
-# 2. 启动核心服务
-docker-compose up -d
+More detailed setup guide coming soon.
 
-# 3. 初始化管理员账户
-./bin/crewclaw init-admin --username admin --password <your_secure_password>
+---
+
+## 🧪 Current Status
+
+🚧 This project is under active development.
+
+What’s stable:
+
+* Core architecture boundaries
+* Runtime lifecycle model
+* Invitation system design
+
+What’s evolving:
+
+* RuntimeManager API
+* Deployment tooling
+* UI polish
+
+---
+
+## 🗺️ Roadmap
+
+The detailed, milestone-based roadmap lives in **[ROADMAP.md](ROADMAP.md)**. Summary:
+
+### v0.1 Foundation
+
+* Multi-user login
+* Per-user runtime containers
+* Unified model gateway
+* Minimal Web UI & admin view
+* Private user workspace
+
+### v0.2 Shared Space
+
+* Team shared space model & permissions
+* Shared space mounting in runtimes
+* Basic shared space management UI
+
+### v0.3 Local Model Support
+
+* Stronger vLLM integration; Ollama as supplemental backend
+* Admin-managed model availability & routing policies
+
+### v0.4 Admin and Governance
+
+* Richer admin console, user lifecycle, runtime inspection
+* Usage visibility, basic audit, quotas & policy
+
+### v0.5 Local Folder Connector
+
+* Desktop connector; authorized local folder access with read/write controls
+* Cross-platform (Windows, Linux, macOS)
+
+### Long-term
+
+* Stronger governance & auditability
+* More deployment options & observability
+* Flexible runtime backends & enterprise controls
+
+---
+
+## 💡 Design Principles
+
+* **Separation of concerns first**
+* **Control plane owns truth**
+* **Runtime is disposable**
+* **Stateless orchestration layer**
+* **Security by default**
+
+---
+
+## 🤝 Contributing
+
+We’re building this in the open.
+
+If you are interested in:
+
+* platform engineering
+* runtime orchestration
+* developer infra
+
+Feel free to open issues or PRs.
+
+---
+
+## ⭐ Support the Project
+
+If this project is useful to you:
+
+* ⭐ Star the repo
+* 🐦 Share it
+* 🧪 Try it out and give feedback
+
+---
+
+## 📄 License
+
+This project is licensed under the **Apache License, Version 2.0**.
+
+See the [LICENSE](LICENSE) file in this repository. A copy of the license is also available at [https://www.apache.org/licenses/LICENSE-2.0](https://www.apache.org/licenses/LICENSE-2.0).
+
+---
+
+## 🔥 Vision
+
+CrewClaw aims to become the **standard control plane for team-based AI workspaces**, starting with OpenClaw.
+
+We are not just building a tool.
+
+We are defining a **new way to run collaborative AI environments at scale**.
+
+---
+
+**中文说明**：简体中文 README 见 [README.zh-CN.md](README.zh-CN.md)。
