@@ -84,7 +84,7 @@ class RuntimeService:
             internal_endpoint = resp.get("internalEndpoint")
             message = resp.get("message", "creating")
 
-            browser_url = f"https://{route_host}"
+            browser_url = resp.get("browserUrl") or f"https://{route_host}"
             self._binding_service.patch_binding_state(
                 user_id=user_id,
                 desired_state=DesiredState.running.value,

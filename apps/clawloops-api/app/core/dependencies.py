@@ -177,7 +177,7 @@ def get_runtime_service(
     )
     model_config_port = ModelConfigServiceAdapter(get_model_config_fn=get_model_config)
 
-    base_url = settings.runtime_manager_base_url or "http://runtime-manager"
+    base_url = settings.runtime_manager_base_url or "http://runtime-manager:18080"
     runtime_manager_client = RuntimeManagerClient(base_url=base_url)
     runtime_manager_port = RuntimeManagerPortAdapter(runtime_manager_client)
 
@@ -189,6 +189,7 @@ def get_runtime_service(
         runtime_manager=runtime_manager_port,
         task_repo=task_repo,
         config_renderer=renderer,
+        route_host_suffix=settings.route_host_suffix,
     )
 
 

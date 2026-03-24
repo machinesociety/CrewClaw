@@ -1,8 +1,13 @@
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends
+from fastapi.responses import RedirectResponse
 
 from app.core.auth import AuthContext
-from app.core.dependencies import get_auth_context, require_active_user
+from app.core.dependencies import get_app_settings, get_auth_context, get_user_service, require_active_user
+from app.core.settings import AppSettings
 from app.schemas.auth import AccessCheckResponse, AuthMeResponse, AuthOptionsResponse, AuthOption
+from app.services.user_service import UserService
 
 
 router = APIRouter(tags=["auth"])
@@ -38,4 +43,37 @@ async def get_auth_options() -> AuthOptionsResponse:
         provider="authentik",
         methods=[AuthOption(type="local_password", enabled=True, label="账号密码登录")],
     )
+
+
+@router.get("/auth/login")
+async def auth_login(
+    settings: AppSettings = Depends(get_app_settings),
+) -> RedirectResponse:
+    """
+    通过 Authentik outpost 发起登录，登录完成后回到前端 /post-login 页面。
+    """
+    rd = quote(settings.auth_post_login_redirect_url, safe="")
+    login_url = f"/outpost.goauthentik.io/start?rd={rd}"
+    return RedirectResponse(url=login_url, status_code=302)
+
+
+@router.post("/auth/post-login")
+async def auth_post_login(
+    ctx: AuthContext = Depends(require_active_user),
+    user_service: UserService = Depends(get_user_service),
+) -> dict:
+    """
+    登录收口（幂等）：确保用户存在并返回前端跳转决策。
+    """
+    user_service.get_or_create_user(ctx.subjectId)
+    binding = user_service.get_runtime_binding(ctx.userId)
+    has_workspace = binding is not None
+    return {
+        "status": "ok",
+        "result": "ok",
+        "userId": ctx.userId,
+        "hasWorkspace": has_workspace,
+        "needsWorkspaceSelection": False,
+        "redirectTo": "/workspace-entry" if has_workspace else None,
+    }
 

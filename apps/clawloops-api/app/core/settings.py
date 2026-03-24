@@ -13,10 +13,13 @@ class AppSettings(BaseSettings):
     auth_header_subject: str = "X-Authentik-Subject"
     auth_header_email: str = "X-Authentik-Email"
     auth_header_groups: str = "X-Authentik-Groups"
+    authentik_public_url: str = "http://localhost:9000"
+    auth_post_login_redirect_url: str = "http://clawloops.localhost/post-login"
 
     # 预留后续接入的外部服务配置字段
     database_url: str | None = None
     runtime_manager_base_url: str | None = None
+    route_host_suffix: str = "clawloops.localhost"
     model_gateway_base_url: str | None = None
 
     class Config:
