@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 
 from app.core.auth import AuthContext
 from app.core.dependencies import get_auth_context, require_active_user
-from app.schemas.auth import AccessCheckResponse, AuthMeResponse
+from app.schemas.auth import AccessCheckResponse, AuthMeResponse, AuthOptionsResponse, AuthOption
 
 
 router = APIRouter(tags=["auth"])
@@ -28,4 +28,14 @@ async def check_access(ctx: AuthContext = Depends(require_active_user)) -> Acces
     """检查当前用户是否可访问业务。"""
 
     return AccessCheckResponse(allowed=True, reason=None)
+
+
+@router.get("/auth/options", response_model=AuthOptionsResponse)
+async def get_auth_options() -> AuthOptionsResponse:
+    """返回登录页可用认证方式。"""
+
+    return AuthOptionsResponse(
+        provider="authentik",
+        methods=[AuthOption(type="local_password", enabled=True, label="账号密码登录")],
+    )
 

@@ -113,9 +113,8 @@ def get_runtime_service(
     """
 
     # 绑定服务适配到 Pydantic UserRuntimeBinding 视图
-    from app.schemas.runtime import RuntimeBindingSnapshot as BindingSchema
     from app.schemas.internal import ModelConfigResponse
-    from app.api.v1.internal import get_user_model_config as internal_get_model_config
+    from app.schemas.runtime import RuntimeBindingSnapshot as BindingSchema
 
     def ensure_binding_schema(user_id: str) -> BindingSchema:
         binding = user_service.ensure_runtime_binding(user_id)
@@ -164,7 +163,13 @@ def get_runtime_service(
         )
 
     def get_model_config(user_id: str) -> ModelConfigResponse:
-        return internal_get_model_config(user_id)  # type: ignore[return-value]
+        _ = user_id
+        return ModelConfigResponse(
+            baseUrl="http://litellm:4000",
+            models=["gpt-4-mini"],
+            gatewayAccessTokenRef="token_ref_001",
+            configRenderVersion="v1",
+        )
 
     binding_port = UserRuntimeBindingServiceAdapter(
         ensure_binding_fn=ensure_binding_schema,

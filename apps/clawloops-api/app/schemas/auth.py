@@ -19,3 +19,14 @@ class AccessCheckResponse(BaseModel):
     allowed: bool
     reason: str | None = None
 
+
+class AuthOption(BaseModel):
+    type: str
+    enabled: bool
+    label: str
+
+
+class AuthOptionsResponse(BaseModel):
+    provider: str
+    methods: list[AuthOption]
+

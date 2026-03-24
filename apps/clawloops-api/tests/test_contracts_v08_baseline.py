@@ -2,8 +2,16 @@ import json
 from pathlib import Path
 
 
+def _contracts_root() -> Path:
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / "contracts"
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError("contracts directory not found from test file path")
+
+
 def _read_contract_file(filename: str) -> dict:
-    path = Path(__file__).resolve().parents[2] / "contracts" / "baseline-v0.8" / filename
+    path = _contracts_root() / "baseline-v0.8" / filename
     return json.loads(path.read_text(encoding="utf-8"))
 
 

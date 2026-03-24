@@ -63,3 +63,12 @@ def test_auth_access_disabled_user_blocked(client):
     finally:
         client.app.dependency_overrides.pop(get_sqlalchemy_user_repository, None)
 
+
+def test_auth_options_available(client):
+    resp = client.get("/api/v1/auth/options")
+    assert resp.status_code == status.HTTP_200_OK
+    data = resp.json()
+    assert data["provider"] == "authentik"
+    assert isinstance(data["methods"], list)
+    assert any(method["type"] == "local_password" and method["enabled"] is True for method in data["methods"])
+
