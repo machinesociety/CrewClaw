@@ -5,6 +5,8 @@ services:
     image: traefik:v3.2.3
     container_name: crewclaw-traefik
     restart: unless-stopped
+    environment:
+      - DOCKER_API_VERSION=1.44
     command:
       - --configFile=/etc/traefik/traefik.yml
     ports:
@@ -29,6 +31,7 @@ services:
     restart: unless-stopped
     environment:
       - PYTHONUNBUFFERED=1
+      - CLAWLOOPS_ROUTE_HOST_SUFFIX=${CLAWLOOPS_DOMAIN}
     labels:
       - traefik.enable=true
       - traefik.http.routers.clawloops_api.rule=Host(`${CLAWLOOPS_DOMAIN}`) && PathPrefix(`/api`)
@@ -71,6 +74,10 @@ services:
       - PYTHONUNBUFFERED=1
       - RUNTIME_MANAGER_HOST=0.0.0.0
       - RUNTIME_MANAGER_PORT=18080
+      - RUNTIME_OPENCLAW_NETWORK=clawloops_shared
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/clawloops:/var/lib/clawloops
     labels:
       - traefik.enable=true
       - traefik.http.routers.runtime_manager.rule=Host(`${RUNTIME_MANAGER_DOMAIN}`)
@@ -90,6 +97,8 @@ services:
       POSTGRES_PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD}
     volumes:
       - authentik_pg_data:/var/lib/postgresql/data
+    networks:
+      - clawloops_shared
 
   authentik-redis:
     image: redis:7.4.1-alpine
@@ -98,6 +107,8 @@ services:
     command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
     volumes:
       - authentik_redis_data:/data
+    networks:
+      - clawloops_shared
 
   authentik-server:
     image: ghcr.io/goauthentik/server:${AUTHENTIK_VERSION}
@@ -115,6 +126,8 @@ services:
       AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
       AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
     command: server
+    ports:
+      - "9000:9000"
     volumes:
       - authentik_media:/media
       - authentik_templates:/templates
@@ -142,6 +155,8 @@ services:
       - authentik_media:/media
       - authentik_certs:/certs
       - authentik_templates:/templates
+    networks:
+      - clawloops_shared
 
   authentik-proxy-outpost:
     image: ghcr.io/goauthentik/proxy:${AUTHENTIK_VERSION}
