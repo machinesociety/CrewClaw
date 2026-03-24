@@ -112,37 +112,18 @@ User → ClawLoops → RuntimeManager → Runtime (OpenClaw)
 
 ---
 
-## 📦 Repositories
+## 📦 Monorepo Structure
 
-This project is composed of multiple repos:
+The project now follows a monorepo layout with external infra components integrated by Docker Compose:
 
-### 🧠 clawloops (this repo)
+* `apps/clawloops-api` — FastAPI control-plane backend
+* `apps/clawloops-web` — frontend web application
+* `services/runtime-manager` — internal runtime execution service
+* `infra/traefik` — Traefik static/dynamic configuration
+* `infra/authentik` — Authentik integration templates
+* `infra/compose/docker-compose.yml` — service orchestration entrypoint
 
-> The control plane
-
-* API server
-* Admin / user dashboard
-* Business logic (users, workspaces, invitations)
-* Runtime lifecycle truth
-
----
-
-### ⚙️ runtimemanager
-
-> Runtime orchestration engine
-
-* Handles runtime creation and lifecycle
-* Reports runtime status back to ClawLoops
-* Can run standalone or via Docker
-
----
-
-### 🐳 openclaw-docker
-
-> Reference runtime image
-
-* Standard OpenClaw runtime environment
-* Preconfigured for ClawLoops integration
+Traefik and Authentik are treated as external infrastructure: use official images with pinned tags, and keep only local integration configuration in this repository.
 
 ---
 
@@ -156,25 +137,47 @@ This project is composed of multiple repos:
 
 ---
 
-## 🛠️ Quick Start
-
-> ⚠️ Full setup docs coming soon
+## 🛠️ Quick Start (Compose)
 
 ### Prerequisites
 
-* Docker
-* Authentik
-* Traefik (recommended)
+* Docker Engine + Docker Compose plugin
+* Domain mapping in local `/etc/hosts` (for local development)
+* Authentik bootstrap values prepared (secret key, DB password, outpost token)
 
-### Run (conceptual)
+### Version Pinning Policy
+
+* Infrastructure images use explicit tags in `infra/compose/docker-compose.yml` (no `latest`).
+* Compose variables are centralized in `infra/compose/.env`.
+* Web package manager version is locked by `apps/clawloops-web/package.json` `packageManager`.
+* API dependencies are constrained by `apps/clawloops-api/pyproject.toml`.
+
+### First-time Setup
 
 ```bash
-# 1. Start ClawLoops
-# 2. Start RuntimeManager
-# 3. Deploy openclaw runtime image
+cp infra/compose/.env.example infra/compose/.env
 ```
 
-More detailed setup guide coming soon.
+Edit `infra/compose/.env` and set secure values before startup.
+
+### Start Services
+
+```bash
+docker compose --env-file infra/compose/.env -f infra/compose/docker-compose.yml up -d --build
+```
+
+### Validate Configuration
+
+```bash
+docker compose --env-file infra/compose/.env -f infra/compose/docker-compose.yml config
+```
+
+### Suggested Bootstrap Order
+
+1. Start `authentik-postgresql`, `authentik-redis`, `authentik-server`, `authentik-worker`.
+2. Complete Authentik initial setup and create Proxy Outpost token.
+3. Set `AUTHENTIK_OUTPOST_TOKEN` in `infra/compose/.env`.
+4. Start `authentik-proxy-outpost`, `traefik`, `clawloops-api`, `clawloops-web`, `runtime-manager`.
 
 ---
 

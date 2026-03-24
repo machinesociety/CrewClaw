@@ -1,0 +1,166 @@
+name: crewclaw
+
+services:
+  traefik:
+    image: traefik:v3.2.3
+    container_name: crewclaw-traefik
+    restart: unless-stopped
+    command:
+      - --configFile=/etc/traefik/traefik.yml
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    volumes:
+      - ../traefik/static/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ../traefik/dynamic:/etc/traefik/dynamic:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - clawloops_shared
+
+  clawloops-api:
+    build:
+      context: ../..
+      dockerfile: apps/clawloops-api/Dockerfile
+    container_name: crewclaw-api
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.clawloops_api.rule=Host(`${CLAWLOOPS_DOMAIN}`) && PathPrefix(`/api`)
+      - traefik.http.routers.clawloops_api.entrypoints=web
+      - traefik.http.routers.clawloops_api.middlewares=authentik-forwardauth@file
+      - traefik.http.services.clawloops_api.loadbalancer.server.port=8000
+    networks:
+      - clawloops_shared
+
+  clawloops-web:
+    build:
+      context: ../..
+      dockerfile: apps/clawloops-web/Dockerfile
+    container_name: crewclaw-web
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.clawloops_web.rule=Host(`${CLAWLOOPS_DOMAIN}`)
+      - traefik.http.routers.clawloops_web.entrypoints=web
+      - traefik.http.routers.clawloops_web.middlewares=authentik-forwardauth@file
+      - traefik.http.services.clawloops_web.loadbalancer.server.port=3000
+    networks:
+      - clawloops_shared
+
+  runtime-manager:
+    build:
+      context: ../..
+      dockerfile: services/runtime-manager/Dockerfile
+    container_name: crewclaw-runtime-manager
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+      - RUNTIME_MANAGER_HOST=0.0.0.0
+      - RUNTIME_MANAGER_PORT=18080
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.runtime_manager.rule=Host(`${RUNTIME_MANAGER_DOMAIN}`)
+      - traefik.http.routers.runtime_manager.entrypoints=web
+      - traefik.http.routers.runtime_manager.middlewares=authentik-forwardauth@file
+      - traefik.http.services.runtime_manager.loadbalancer.server.port=18080
+    networks:
+      - clawloops_shared
+
+  authentik-postgresql:
+    image: postgres:16.6
+    container_name: crewclaw-authentik-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${AUTHENTIK_POSTGRES_DB}
+      POSTGRES_USER: ${AUTHENTIK_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD}
+    volumes:
+      - authentik_pg_data:/var/lib/postgresql/data
+
+  authentik-redis:
+    image: redis:7.4.1-alpine
+    container_name: crewclaw-authentik-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    volumes:
+      - authentik_redis_data:/data
+
+  authentik-server:
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_VERSION}
+    container_name: crewclaw-authentik-server
+    restart: unless-stopped
+    depends_on:
+      - authentik-postgresql
+      - authentik-redis
+    environment:
+      AUTHENTIK_REDIS__HOST: authentik-redis
+      AUTHENTIK_POSTGRESQL__HOST: authentik-postgresql
+      AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_POSTGRES_DB}
+      AUTHENTIK_POSTGRESQL__USER: ${AUTHENTIK_POSTGRES_USER}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+    command: server
+    volumes:
+      - authentik_media:/media
+      - authentik_templates:/templates
+    networks:
+      - clawloops_shared
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_VERSION}
+    container_name: crewclaw-authentik-worker
+    restart: unless-stopped
+    depends_on:
+      - authentik-postgresql
+      - authentik-redis
+    environment:
+      AUTHENTIK_REDIS__HOST: authentik-redis
+      AUTHENTIK_POSTGRESQL__HOST: authentik-postgresql
+      AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_POSTGRES_DB}
+      AUTHENTIK_POSTGRESQL__USER: ${AUTHENTIK_POSTGRES_USER}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_POSTGRES_PASSWORD}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
+      AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+    command: worker
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - authentik_media:/media
+      - authentik_certs:/certs
+      - authentik_templates:/templates
+
+  authentik-proxy-outpost:
+    image: ghcr.io/goauthentik/proxy:${AUTHENTIK_VERSION}
+    container_name: crewclaw-authentik-proxy-outpost
+    restart: unless-stopped
+    depends_on:
+      - authentik-server
+    environment:
+      AUTHENTIK_HOST: http://authentik-server:9000
+      AUTHENTIK_INSECURE: "true"
+      AUTHENTIK_TOKEN: ${AUTHENTIK_OUTPOST_TOKEN}
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.authentik_outpost.rule=Host(`${CLAWLOOPS_DOMAIN}`) && PathPrefix(`/outpost.goauthentik.io/`)
+      - traefik.http.routers.authentik_outpost.entrypoints=web
+      - traefik.http.services.authentik_outpost.loadbalancer.server.port=9000
+    networks:
+      - clawloops_shared
+
+networks:
+  clawloops_shared:
+    name: clawloops_shared
+    driver: bridge
+
+volumes:
+  authentik_pg_data:
+  authentik_redis_data:
+  authentik_media:
+  authentik_certs:
+  authentik_templates:
