@@ -24,12 +24,17 @@ export default function LoginPage() {
   const [options, setOptions] = useState<AuthOptionsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // If already authenticated, redirect to app
+  // If already authenticated, redirect based on role
+  const { user } = useAuth();
   useEffect(() => {
     if (bootState === 'authenticatedReady') {
-      navigate('/app');
+      if (user?.role === 'admin') {
+        navigate('/admin');
+      } else {
+        navigate('/app');
+      }
     }
-  }, [bootState, navigate]);
+  }, [bootState, user, navigate]);
 
   // Load auth options
   useEffect(() => {
@@ -42,7 +47,7 @@ export default function LoginPage() {
         // If API not available, still show login button with default config
         setOptions({
           provider: 'authentik',
-          methods: [{ type: 'local_password', enabled: true, label: '账号密码登录' }],
+          methods: [{ type: 'local_password', enabled: true, label: '用户名优先登录' }],
         });
         setPageState('ready');
       }
@@ -133,6 +138,11 @@ export default function LoginPage() {
             <p className="text-muted-foreground text-sm">
               使用您的账号密码登录平台
             </p>
+            <div className="mt-3 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
+              <p className="text-xs text-amber-400/90 leading-relaxed">
+                请优先使用管理员提供的<strong>用户名</strong>登录，无需使用邮箱地址。
+              </p>
+            </div>
           </div>
 
           {pageState === 'loading' && (
@@ -181,7 +191,7 @@ export default function LoginPage() {
               )}
 
               <p className="text-xs text-muted-foreground text-center">
-                首次使用？请联系管理员获取邀请链接
+                首次使用？请联系系统管理员获取邀请链接
               </p>
             </div>
           )}

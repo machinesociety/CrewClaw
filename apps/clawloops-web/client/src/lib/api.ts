@@ -65,10 +65,12 @@ export interface AuthOptionsResponse {
 }
 
 export interface PostLoginResult {
-  status: string;
+  status?: string;
   userId?: string;
+  entryType?: 'workspace' | 'admin_console';
   hasWorkspace?: boolean;
   workspaceId?: string | null;
+  workspaceName?: string | null;
   needsWorkspaceSelection?: boolean;
   invitationApplied?: boolean;
   redirectTo?: string;
@@ -80,6 +82,7 @@ export interface InvitationPreview {
   valid: boolean;
   invitation?: {
     targetEmail: string;
+    loginUsername?: string;  // preferred display name for no-real-email users
     workspaceId: string;
     workspaceName: string;
     role: string;
@@ -133,8 +136,10 @@ export interface RuntimeTask {
 
 export interface WorkspaceEntry {
   ready: boolean;
+  hasWorkspace?: boolean;
   runtimeId?: string;
   browserUrl?: string;
+  reason?: string | null;
 }
 
 export interface RuntimeActionResponse {
@@ -176,6 +181,7 @@ export interface AdminUserDetail extends AdminUser {
 export interface AdminInvitation {
   invitationId: string;
   targetEmail: string;
+  loginUsername?: string;  // preferred login username for no-real-email users
   workspaceId: string;
   role: string;
   status: 'pending' | 'consumed' | 'revoked';
@@ -188,6 +194,7 @@ export interface AdminInvitation {
 
 export interface CreateInvitationRequest {
   targetEmail: string;
+  loginUsername?: string;  // optional: preferred login username
   workspaceId: string;
   role: string;
   expiresInHours: number;
@@ -208,6 +215,43 @@ export interface CreateCredentialRequest {
   name?: string;
   apiKey?: string;
   [key: string]: unknown;
+}
+
+// Admin - Home
+export interface AdminHomeSummary {
+  totalUsers: number;
+  activeUsers: number;
+  disabledUsers: number;
+  pendingInvitations: number;
+  expiringInvitations24h: number;
+  runningRuntimes: number;
+  runtimeErrors: number;
+}
+
+export interface AdminHomePendingInvitation {
+  invitationId: string;
+  targetEmail: string;
+  loginUsername?: string;
+  workspaceId: string;
+  role: string;
+  expiresAt: string;
+  status: 'pending' | 'consumed' | 'revoked';
+}
+
+export interface AdminHomeRuntimeAlert {
+  userId: string;
+  runtimeId: string;
+  observedState: string;
+  lastError?: string | null;
+  updatedAt?: string;
+}
+
+export interface AdminHome {
+  summary: AdminHomeSummary;
+  attention: {
+    pendingInvitations: AdminHomePendingInvitation[];
+    runtimeAlerts: AdminHomeRuntimeAlert[];
+  };
 }
 
 // Admin - Usage
@@ -251,6 +295,7 @@ async function request<T>(
     credentials: 'include',
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
+
   if (!res.ok) {
     let errorData: { code?: string; message?: string } = {};
     try {
@@ -349,6 +394,9 @@ export const modelsApi = {
 // ============================================================
 
 export const adminApi = {
+  // Home
+  home: () => get<AdminHome>('/admin/home'),
+
   // Users
   users: {
     list: () => get<{ users: AdminUser[] }>('/admin/users'),

@@ -9,7 +9,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useLocation } from 'wouter';
+import { useLocation, useSearch } from 'wouter';
 import {
   runtimeApi,
   modelsApi,
@@ -58,7 +58,43 @@ import {
   Circle,
   Zap,
   Activity,
+  PartyPopper,
+  X,
+  ShieldCheck,
+  Layers,
+  PlugZap,
 } from 'lucide-react';
+
+// ─── Staged progress steps (same 4 as WorkspaceEntry) ───────────────────────
+
+const RUNTIME_PROGRESS_STEPS = [
+  { id: 1, label: '已接入 Workspace',     icon: ShieldCheck },
+  { id: 2, label: '正在创建运行环境',      icon: Layers      },
+  { id: 3, label: '正在启动服务',          icon: Zap         },
+  { id: 4, label: '正在验证工作区入口',    icon: PlugZap     },
+];
+
+// ─── Invitation applied banner ───────────────────────────────────────────────
+
+function InvitationAppliedBanner({ workspaceName, onDismiss }: { workspaceName?: string | null; onDismiss: () => void }) {
+  return (
+    <div className="rounded-xl border border-green-500/30 bg-green-500/5 px-5 py-4 flex items-start gap-3 mb-5">
+      <div className="w-8 h-8 rounded-full bg-green-500/15 flex items-center justify-center flex-shrink-0">
+        <PartyPopper className="w-4 h-4 text-green-400" />
+      </div>
+      <div className="flex-1">
+        <p className="text-sm font-semibold text-green-300">已成功加入工作区</p>
+        <p className="text-xs text-green-400/70 mt-0.5">
+          {workspaceName ? `欢迎加入「${workspaceName}」` : '邀请已接受，您的账号已绑定工作区。'}
+          现在可以启动运行环境开始使用。
+        </p>
+      </div>
+      <button onClick={onDismiss} className="text-muted-foreground hover:text-foreground transition-colors">
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  );
+}
 
 // ============================================================
 // Runtime UI state derivation (per UI_状态模型.md §4.5)
@@ -438,6 +474,14 @@ function DeleteDialog({
 function DashboardContent() {
   const { user } = useAuth();
   const [, navigate] = useLocation();
+  const search = useSearch();
+
+  // Detect invitationApplied from post-login redirect query param
+  const searchParams = new URLSearchParams(search);
+  const [showInvitationBanner, setShowInvitationBanner] = useState(
+    searchParams.get('invitationApplied') === 'true'
+  );
+  const invitationWorkspaceName = searchParams.get('workspaceName') || null;
 
   // Runtime state
   const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatusProjection | null>(null);
@@ -594,7 +638,7 @@ function DashboardContent() {
     <div className="page-enter">
       <PageHeader
         title="工作台"
-        description={`欢迎回来，${user?.userId || '用户'}`}
+        description={`欢迎回来，${(user as any)?.username || user?.userId || '用户'}`}
         actions={
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -604,6 +648,14 @@ function DashboardContent() {
           </div>
         }
       />
+
+      {/* Invitation applied confirmation banner */}
+      {showInvitationBanner && (
+        <InvitationAppliedBanner
+          workspaceName={invitationWorkspaceName}
+          onDismiss={() => setShowInvitationBanner(false)}
+        />
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Runtime Card */}

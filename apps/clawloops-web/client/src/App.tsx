@@ -13,9 +13,11 @@
  *   /workspace-entry        - Workspace entry (工作区入口)
  *
  * Admin (requires admin role):
+ *   /admin                  - Admin home (摘要 + 待办 + 快捷入口)
  *   /admin/users            - User management list
  *   /admin/users/:userId    - User detail
  *   /admin/invitations      - Invitation management
+ *   /admin/invitations/:id  - Invitation detail
  *   /admin/models           - Model governance
  *   /admin/provider-credentials - Provider credentials
  *   /admin/usage            - Usage summary
@@ -44,8 +46,10 @@ import DashboardPage from './pages/Dashboard';
 import WorkspaceEntryPage from './pages/WorkspaceEntry';
 
 // Admin pages
+import AdminHomePage from './pages/admin/AdminHome';
 import { AdminUsersListPage, AdminUserDetailPage } from './pages/admin/AdminUsers';
 import AdminInvitationsPage from './pages/admin/AdminInvitations';
+import AdminInvitationDetailPage from './pages/admin/AdminInvitationDetail';
 import AdminModelsPage from './pages/admin/AdminModels';
 import AdminCredentialsPage from './pages/admin/AdminCredentials';
 import AdminUsagePage from './pages/admin/AdminUsage';
@@ -76,9 +80,11 @@ function Router() {
       <Route path="/workspace-entry" component={WorkspaceEntryPage} />
 
       {/* Admin routes */}
+      <Route path="/admin" component={AdminHomePage} />
       <Route path="/admin/users" component={AdminUsersListPage} />
       <Route path="/admin/users/:userId" component={AdminUserDetailPage} />
       <Route path="/admin/invitations" component={AdminInvitationsPage} />
+      <Route path="/admin/invitations/:invitationId" component={AdminInvitationDetailPage} />
       <Route path="/admin/models" component={AdminModelsPage} />
       <Route path="/admin/provider-credentials" component={AdminCredentialsPage} />
       <Route path="/admin/usage" component={AdminUsagePage} />
