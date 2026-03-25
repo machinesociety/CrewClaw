@@ -13,6 +13,9 @@ class AppSettings(BaseSettings):
     auth_header_subject: str = "X-authentik-uid"
     auth_header_email: str = "X-Authentik-Email"
     auth_header_groups: str = "X-Authentik-Groups"
+    # 逗号分隔，与 Authentik 中 Group 名称完全一致；命中任一即应用内 UserRole.ADMIN
+    # 含 Authentik 内置组名 authentik Admins，便于 akadmin 等与 clawloops-admins 并存
+    auth_admin_group_slugs: str = "clawloops-admins,authentik Admins"
     authentik_public_url: str = "http://localhost:9000"
     auth_post_login_redirect_url: str = "http://clawloops.localhost/post-login"
 

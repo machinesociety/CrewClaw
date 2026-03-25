@@ -33,6 +33,7 @@ services:
       - PYTHONUNBUFFERED=1
       - CLAWLOOPS_ROUTE_HOST_SUFFIX=${CLAWLOOPS_DOMAIN}
       - CLAWLOOPS_AUTH_HEADER_SUBJECT=X-authentik-uid
+      - CLAWLOOPS_AUTH_ADMIN_GROUP_SLUGS=${CLAWLOOPS_AUTH_ADMIN_GROUP_SLUGS:-clawloops-admins,authentik Admins}
     labels:
       - traefik.enable=true
       - traefik.http.routers.clawloops_api.rule=Host(`${CLAWLOOPS_DOMAIN}`) && PathPrefix(`/api`)
