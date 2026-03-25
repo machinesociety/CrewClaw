@@ -92,6 +92,62 @@ class ProviderCredentialInvalidError(AppError):
     )
 
 
+class InvitationNotFoundError(AppError):
+    spec = ErrorSpec(
+        http_status=HTTPStatus.NOT_FOUND,
+        code="INVITATION_NOT_FOUND",
+        message="Invitation not found.",
+    )
+
+
+class InvitationAlreadyConsumedError(AppError):
+    spec = ErrorSpec(
+        http_status=HTTPStatus.CONFLICT,
+        code="INVITATION_ALREADY_CONSUMED",
+        message="Invitation already consumed.",
+    )
+
+
+class InvitationRevokedError(AppError):
+    spec = ErrorSpec(
+        http_status=HTTPStatus.CONFLICT,
+        code="INVITATION_REVOKED",
+        message="Invitation revoked.",
+    )
+
+
+class InvitationExpiredError(AppError):
+    spec = ErrorSpec(
+        http_status=HTTPStatus.GONE,
+        code="INVITATION_EXPIRED",
+        message="Invitation expired.",
+    )
+
+
+class InvitationEmailMismatchError(AppError):
+    spec = ErrorSpec(
+        http_status=HTTPStatus.UNPROCESSABLE_ENTITY,
+        code="INVITATION_EMAIL_MISMATCH",
+        message="Invitation email mismatch.",
+    )
+
+
+class InvitationWorkspaceInvalidError(AppError):
+    spec = ErrorSpec(
+        http_status=HTTPStatus.UNPROCESSABLE_ENTITY,
+        code="INVITATION_WORKSPACE_INVALID",
+        message="Invitation workspace invalid.",
+    )
+
+
+class InvitationError(AppError):
+    spec = ErrorSpec(
+        http_status=HTTPStatus.BAD_GATEWAY,
+        code="INVITATION_ERROR",
+        message="Invitation flow error.",
+    )
+
+
 ERROR_TYPE_MAP: dict[Type[AppError], ErrorSpec] = {
     UnauthenticatedError: UnauthenticatedError.spec,
     UserDisabledError: UserDisabledError.spec,
@@ -101,5 +157,12 @@ ERROR_TYPE_MAP: dict[Type[AppError], ErrorSpec] = {
     ModelNotFoundError: ModelNotFoundError.spec,
     ProviderCredentialNotFoundError: ProviderCredentialNotFoundError.spec,
     ProviderCredentialInvalidError: ProviderCredentialInvalidError.spec,
+    InvitationNotFoundError: InvitationNotFoundError.spec,
+    InvitationAlreadyConsumedError: InvitationAlreadyConsumedError.spec,
+    InvitationRevokedError: InvitationRevokedError.spec,
+    InvitationExpiredError: InvitationExpiredError.spec,
+    InvitationEmailMismatchError: InvitationEmailMismatchError.spec,
+    InvitationWorkspaceInvalidError: InvitationWorkspaceInvalidError.spec,
+    InvitationError: InvitationError.spec,
 }
 

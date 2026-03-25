@@ -20,8 +20,18 @@ class AuthContext(BaseModel):
     subjectId: str
     tenantId: str
     role: str
+    email: str | None = None
+    username: str | None = None
     isAdmin: bool = False
     isDisabled: bool = False
+
+
+def _read_first_header(request: Request, *names: str) -> str | None:
+    for n in names:
+        v = request.headers.get(n)
+        if v:
+            return v
+    return None
 
 
 def _read_groups_header(request: Request, settings: AppSettings) -> str | None:
@@ -104,11 +114,27 @@ def build_auth_context_from_request(
             user.role = desired
             user_repo.save(user)
 
+    email = _read_first_header(
+        request,
+        settings.auth_header_email,
+        "X-authentik-email",
+        "X-Authentik-Email",
+    )
+    username = _read_first_header(
+        request,
+        "X-authentik-username",
+        "X-Authentik-Username",
+        "X-authentik-name",
+        "X-Authentik-Name",
+    )
+
     return AuthContext(
         userId=user.user_id,
         subjectId=user.subject_id,
         tenantId=user.tenant_id,
         role=user.role.value,
+        email=email,
+        username=username,
         isAdmin=user.role == UserRole.ADMIN,
         isDisabled=user.is_disabled(),
     )

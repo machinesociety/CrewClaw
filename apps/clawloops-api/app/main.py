@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1 import admin as admin_api
 from app.api.v1 import auth as auth_api
+from app.api.v1 import invitations_public as invitations_public_api
 from app.api.v1 import internal as internal_api
 from app.api.v1 import models as models_api
 from app.api.v1 import runtime as runtime_api
@@ -47,6 +48,7 @@ def create_app() -> FastAPI:
 
     # 挂载 v1 路由
     app.include_router(auth_api.router, prefix="/api/v1")
+    app.include_router(invitations_public_api.router, prefix="/api/v1")
     app.include_router(users_api.router, prefix="/api/v1")
     app.include_router(runtime_api.router, prefix="/api/v1")
     app.include_router(models_api.router, prefix="/api/v1")

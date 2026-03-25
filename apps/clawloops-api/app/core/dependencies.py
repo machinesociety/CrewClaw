@@ -13,6 +13,7 @@ from app.repositories.user_repository import (
     UserRepository,
     UserRuntimeBindingRepository,
 )
+from app.repositories.invitation_repository import InvitationRepository, SqlAlchemyInvitationRepository
 from app.services.runtime_config_renderer import RuntimeConfigRenderer
 from app.services.runtime_service import (
     InMemoryRuntimeTaskRepository,
@@ -22,6 +23,7 @@ from app.services.runtime_service import (
     UserRuntimeBindingServiceAdapter,
 )
 from app.services.user_service import UserService
+from app.services.invitation_service import InvitationService
 
 
 _user_repo_singleton: UserRepository | None = None
@@ -61,6 +63,19 @@ def get_runtime_binding_repository(
     db: Session = Depends(get_db_session_dep),
 ) -> UserRuntimeBindingRepository:
     return SqlAlchemyUserRuntimeBindingRepository(db)
+
+
+def get_invitation_repository(
+    db: Session = Depends(get_db_session_dep),
+) -> InvitationRepository:
+    return SqlAlchemyInvitationRepository(db)
+
+
+def get_invitation_service(
+    repo: InvitationRepository = Depends(get_invitation_repository),
+    settings: AppSettings = Depends(get_app_settings),
+) -> InvitationService:
+    return InvitationService(repo=repo, settings=settings)
 
 
 def get_sqlalchemy_user_repository(

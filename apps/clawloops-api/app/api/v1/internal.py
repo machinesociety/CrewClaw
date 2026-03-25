@@ -1,6 +1,13 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends
 
-from app.core.dependencies import get_user_service
+from app.core.dependencies import get_invitation_service, get_user_service
+from app.core.errors import (
+    InvitationEmailMismatchError,
+    InvitationNotFoundError,
+)
+from app.domain.invitations import Invitation, InvitationStatus
 from app.domain.users import DesiredState, ObservedState, RetentionPolicy
 from app.schemas.internal import (
     ContainerStateResponse,
@@ -20,6 +27,7 @@ from app.schemas.runtime import (
     RuntimeBindingSnapshot,
 )
 from app.services.user_service import UserService
+from app.services.invitation_service import InvitationService
 
 
 router = APIRouter(prefix="/internal", tags=["internal"])
@@ -51,6 +59,43 @@ async def sync_user(
     user = user_service.get_or_create_user(body.subjectId)
     return {"userId": user.user_id, "subjectId": user.subject_id, "tenantId": user.tenant_id}
 
+
+@router.post("/invitations")
+async def internal_create_invitation() -> dict:
+    """
+    internal 创建 invitation 真相对象（占位）。
+
+    v0.11：管理员侧创建走 /api/v1/admin/invitations；这里保留 internal 落点以便后续模块拆分。
+    """
+    return {"status": "not_implemented"}
+
+
+@router.post("/invitations/{invitation_id}/consume")
+async def internal_consume_invitation(
+    invitation_id: str,
+    userId: str,
+    email: str,
+    svc: InvitationService = Depends(get_invitation_service),
+) -> dict:
+    """
+    消费 invitation 并完成业务绑定（幂等骨架）。
+
+    当前实现仅做：
+    - invitation 存在性校验
+    - 邮箱槽位校验（强校验）
+    - 标记 consumed
+    """
+    inv = svc.consume(invitation_id=invitation_id, user_id=userId, email=email)
+    return {"status": "ok", "invitationId": inv.invitation_id, "consumedByUserId": inv.consumed_by_user_id}
+
+
+@router.post("/invitations/{invitation_id}/revoke")
+async def internal_revoke_invitation(
+    invitation_id: str,
+    svc: InvitationService = Depends(get_invitation_service),
+) -> dict:
+    svc.revoke(invitation_id)
+    return {"status": "ok"}
 
 @router.post("/users/{user_id}/runtime-binding/ensure", response_model=RuntimeBindingSnapshot)
 async def ensure_runtime_binding(
@@ -148,9 +193,9 @@ async def ensure_container_running(body: EnsureContainerRequest) -> ContainerSta
     """
     _ = body
     return ContainerStateResponse(
-        runtimeId="rt_001",
+        runtimeId=body.runtimeId,
         observedState="creating",
-        internalEndpoint="http://clawloops-u001:3000",
+        internalEndpoint=f"http://rt-{body.runtimeId}:18789",
         message="creating",
     )
 
@@ -160,6 +205,7 @@ async def stop_container(body: StopContainerRequest) -> dict:
     """
     停止容器占位。
     """
+    # v0.11：stop(nonexistent)=stopped
     return {"runtimeId": body.runtimeId, "observedState": "stopped", "message": "stopped"}
 
 
@@ -169,6 +215,7 @@ async def delete_container(body: DeleteContainerRequest) -> dict:
     删除容器占位。
     """
     _ = body.retentionPolicy
+    # v0.11：delete(nonexistent)=deleted
     return {"runtimeId": body.runtimeId, "observedState": "deleted", "message": "deleted"}
 
 
@@ -178,10 +225,11 @@ async def get_container_state(runtime_id: str) -> ContainerStateResponse:
     查询容器状态。
     """
     _ = runtime_id
+    # v0.11：GET 找不到容器事实时也返回 200 + observedState=deleted（此处用占位实现）。
     return ContainerStateResponse(
         runtimeId=runtime_id,
-        observedState="running",
-        internalEndpoint="http://clawloops-u001:3000",
-        message="running",
+        observedState="deleted",
+        internalEndpoint=None,
+        message="deleted",
     )
 

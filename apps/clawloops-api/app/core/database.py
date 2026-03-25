@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Generator
 
 from sqlalchemy import create_engine
@@ -21,8 +22,11 @@ def _build_database_url(settings: AppSettings) -> str:
     if settings.database_url:
         return settings.database_url
 
-    # 默认使用本地 SQLite 文件，避免额外依赖。
-    return "sqlite:///./clawloops.db"
+    # 默认使用本地 SQLite 文件（避免使用仓库中的 clawloops.db：可能是只读/权限不一致）。
+    # 在 pytest 下使用独立文件，避免污染开发库。
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return "sqlite:///./.clawloops_test.db"
+    return "sqlite:///./.clawloops_local.db"
 
 
 def create_engine_from_settings(settings: AppSettings | None = None):
@@ -63,6 +67,7 @@ def init_db() -> None:
 
     # 延迟导入以避免循环依赖。
     from app.models import user as user_models  # noqa: F401
+    from app.models import invitation as invitation_models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
 

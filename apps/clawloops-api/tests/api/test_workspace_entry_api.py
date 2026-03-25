@@ -23,9 +23,10 @@ def test_workspace_entry_no_binding(client_with_inmemory):
     data = resp.json()
 
     assert data["ready"] is False
+    assert data["hasWorkspace"] is False
     assert data["runtimeId"] is None
     assert data["browserUrl"] is None
-    assert data["reason"] == "runtime_not_found"
+    assert data["reason"] == "RUNTIME_PREPARING"
     assert "internalEndpoint" not in data
 
 
@@ -44,9 +45,10 @@ def test_workspace_entry_not_running_and_ready(client_with_inmemory):
     assert resp_stopped.status_code == status.HTTP_200_OK
     data_stopped = resp_stopped.json()
     assert data_stopped["ready"] is False
+    assert data_stopped["hasWorkspace"] is True
     assert data_stopped["runtimeId"] == runtime_id
     assert data_stopped["browserUrl"] is None
-    assert data_stopped["reason"] == "runtime_not_running"
+    assert data_stopped["reason"] == "RUNTIME_PREPARING"
 
     # 启动中：desired=running, observed=creating -> runtime_starting
     resp_update_creating = client.patch(
@@ -66,7 +68,7 @@ def test_workspace_entry_not_running_and_ready(client_with_inmemory):
     data_starting = resp_starting.json()
     assert data_starting["ready"] is False
     assert data_starting["runtimeId"] == runtime_id
-    assert data_starting["reason"] == "runtime_starting"
+    assert data_starting["reason"] == "RUNTIME_PREPARING"
 
     # ready：observed=running 且 browser_url 非空
     resp_update_running = client.patch(
@@ -85,6 +87,7 @@ def test_workspace_entry_not_running_and_ready(client_with_inmemory):
     assert resp_ready.status_code == status.HTTP_200_OK
     data_ready = resp_ready.json()
     assert data_ready["ready"] is True
+    assert data_ready["hasWorkspace"] is True
     assert data_ready["runtimeId"] == runtime_id
     assert data_ready["browserUrl"] == "https://u-001.clawloops.example.com"
     assert data_ready["reason"] is None
@@ -115,9 +118,10 @@ def test_workspace_entry_error_reason(client_with_inmemory):
     assert resp.status_code == status.HTTP_200_OK
     data = resp.json()
     assert data["ready"] is False
+    assert data["hasWorkspace"] is True
     assert data["runtimeId"] == runtime_id
     assert data["browserUrl"] is None
-    assert data["reason"] == "runtime_error"
+    assert data["reason"] == "RUNTIME_PREPARING"
 
 
 def test_workspace_entry_disabled_user_returns_403(client):

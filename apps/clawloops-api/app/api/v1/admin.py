@@ -1,7 +1,12 @@
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
 
 from app.core.auth import AuthContext
 from app.core.dependencies import (
+    get_db_session_dep,
+    get_invitation_service,
     get_runtime_service,
     get_user_service,
     require_active_user,
@@ -23,6 +28,13 @@ from app.schemas.admin import (
     AdminUserRuntimeResponse,
     UpdateUserStatusRequest,
 )
+from app.schemas.invitations import AdminInvitationItem, AdminInvitationListResponse, CreateAdminInvitationRequest
+from app.schemas.admin_home import (
+    AdminHomeAttention,
+    AdminHomeResponse,
+    AdminHomeRuntimeAlert,
+    AdminHomeSummary,
+)
 from app.schemas.credentials import (
     CreateProviderCredentialRequest,
     ProviderCredentialItem,
@@ -30,6 +42,7 @@ from app.schemas.credentials import (
     VerifyProviderCredentialResponse,
 )
 from app.schemas.models import AdminModelItem, AdminModelListResponse, UpdateAdminModelRequest
+from app.services.invitation_service import InvitationService
 from app.services.model_service import ModelService, ProviderCredentialService, UsageService
 from app.services.runtime_service import RuntimeService
 from app.services.user_service import UserService
@@ -42,6 +55,26 @@ def _require_admin(ctx: AuthContext = Depends(require_active_user)) -> AuthConte
     if not ctx.isAdmin:
         raise AccessDeniedError()
     return ctx
+
+
+def _to_admin_inv(inv) -> AdminInvitationItem:
+    return AdminInvitationItem(
+        invitationId=inv.invitation_id,
+        targetEmail=inv.target_email,
+        loginUsername=inv.login_username,
+        workspaceId=inv.workspace_id,
+        role=inv.role,
+        status=inv.status.value,
+        expiresAt=inv.expires_at,
+        consumedAt=inv.consumed_at,
+        consumedByUserId=inv.consumed_by_user_id,
+        lastError=inv.last_error,
+        createdAt=inv.created_at,
+    )
+
+
+def _iso_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def get_model_service(model_repo: ModelRepository = Depends(get_inmemory_model_repository)) -> ModelService:
@@ -82,6 +115,165 @@ async def list_users(
         )
         for u in users
     ]
+
+
+@router.get("/admin/invitations", response_model=AdminInvitationListResponse)
+async def list_admin_invitations(
+    _: AuthContext = Depends(_require_admin),
+    svc: InvitationService = Depends(get_invitation_service),
+) -> AdminInvitationListResponse:
+    return AdminInvitationListResponse(invitations=[_to_admin_inv(i) for i in svc.list_invitations()])
+
+
+@router.post("/admin/invitations", response_model=AdminInvitationItem, status_code=201)
+async def create_admin_invitation(
+    body: CreateAdminInvitationRequest,
+    ctx: AuthContext = Depends(_require_admin),
+    svc: InvitationService = Depends(get_invitation_service),
+) -> AdminInvitationItem:
+    inv = svc.create_admin_invitation(
+        target_email=body.targetEmail,
+        login_username=body.loginUsername,
+        workspace_id=body.workspaceId,
+        role=body.role,
+        expires_in_hours=body.expiresInHours,
+        created_by_user_id=ctx.userId,
+    )
+    return _to_admin_inv(inv)
+
+
+@router.get("/admin/invitations/{invitation_id}", response_model=AdminInvitationItem)
+async def get_admin_invitation(
+    invitation_id: str,
+    _: AuthContext = Depends(_require_admin),
+    svc: InvitationService = Depends(get_invitation_service),
+) -> AdminInvitationItem:
+    return _to_admin_inv(svc.get_admin_invitation(invitation_id))
+
+
+@router.post("/admin/invitations/{invitation_id}/revoke")
+async def revoke_admin_invitation(
+    invitation_id: str,
+    _: AuthContext = Depends(_require_admin),
+    svc: InvitationService = Depends(get_invitation_service),
+) -> dict:
+    svc.revoke(invitation_id)
+    return {"status": "ok"}
+
+
+@router.post("/admin/invitations/{invitation_id}/resend")
+async def resend_admin_invitation(
+    invitation_id: str,
+    _: AuthContext = Depends(_require_admin),
+    svc: InvitationService = Depends(get_invitation_service),
+) -> dict:
+    # MVP: 仅占位（真实邮件发送由后续模块承接）
+    _ = svc.get_admin_invitation(invitation_id)
+    return {"status": "ok"}
+
+
+@router.get("/admin/home", response_model=AdminHomeResponse)
+async def get_admin_home(
+    _: AuthContext = Depends(_require_admin),
+    db: Session = Depends(get_db_session_dep),
+) -> AdminHomeResponse:
+    """
+    v0.11：管理后台首页摘要聚合接口。
+
+    MVP：直接从 SQLite 真相表聚合最小字段。
+    """
+    from app.domain.invitations import InvitationStatus
+    from app.domain.users import ObservedState, UserStatus
+    from app.models.invitation import InvitationModel
+    from app.models.user import UserModel, UserRuntimeBindingModel
+
+    total_users = db.query(UserModel).count()
+    active_users = db.query(UserModel).filter(UserModel.status == UserStatus.ACTIVE).count()
+    disabled_users = db.query(UserModel).filter(UserModel.status == UserStatus.DISABLED).count()
+
+    pending_invs = (
+        db.query(InvitationModel)
+        .filter(InvitationModel.status == InvitationStatus.PENDING)
+        .count()
+    )
+
+    now = datetime.now(timezone.utc)
+    in_24h = (now + timedelta(hours=24)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    expiring_24h = (
+        db.query(InvitationModel)
+        .filter(InvitationModel.status == InvitationStatus.PENDING)
+        .filter(InvitationModel.expires_at <= in_24h)
+        .count()
+    )
+
+    running_runtimes = (
+        db.query(UserRuntimeBindingModel)
+        .filter(UserRuntimeBindingModel.observed_state == ObservedState.RUNNING)
+        .count()
+    )
+    runtime_errors = (
+        db.query(UserRuntimeBindingModel)
+        .filter(UserRuntimeBindingModel.observed_state == ObservedState.ERROR)
+        .count()
+    )
+
+    pending_inv_rows = (
+        db.query(InvitationModel)
+        .filter(InvitationModel.status == InvitationStatus.PENDING)
+        .order_by(InvitationModel.id.desc())
+        .limit(10)
+        .all()
+    )
+    pending_inv_items = [
+        AdminInvitationItem(
+            invitationId=r.invitation_id,
+            targetEmail=r.target_email,
+            loginUsername=r.login_username,
+            workspaceId=r.workspace_id,
+            role=r.role,
+            status=r.status.value,
+            expiresAt=r.expires_at,
+            consumedAt=r.consumed_at,
+            consumedByUserId=r.consumed_by_user_id,
+            lastError=r.last_error,
+            createdAt=r.created_at,
+        )
+        for r in pending_inv_rows
+    ]
+
+    runtime_alert_rows = (
+        db.query(UserRuntimeBindingModel)
+        .filter(UserRuntimeBindingModel.observed_state == ObservedState.ERROR)
+        .order_by(UserRuntimeBindingModel.id.desc())
+        .limit(10)
+        .all()
+    )
+    runtime_alerts = [
+        AdminHomeRuntimeAlert(
+            userId=r.user_id,
+            runtimeId=r.runtime_id,
+            observedState=r.observed_state.value,
+            lastError=r.last_error,
+            updatedAt=_iso_now(),
+        )
+        for r in runtime_alert_rows
+    ]
+
+    return AdminHomeResponse(
+        summary=AdminHomeSummary(
+            totalUsers=total_users,
+            activeUsers=active_users,
+            disabledUsers=disabled_users,
+            pendingInvitations=pending_invs,
+            expiringInvitations24h=expiring_24h,
+            runningRuntimes=running_runtimes,
+            runtimeErrors=runtime_errors,
+        ),
+        attention=AdminHomeAttention(
+            pendingInvitations=pending_inv_items,
+            runtimeAlerts=runtime_alerts,
+        ),
+    )
 
 
 @router.get("/admin/users/{user_id}", response_model=AdminUserDetailResponse)

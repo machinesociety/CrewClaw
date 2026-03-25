@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends
 
 from app.core.dependencies import get_user_service, require_active_user
 from app.domain.users import ObservedState
-from app.schemas.runtime import WorkspaceEntryReason
 from app.schemas.workspace import WorkspaceEntryResponse
 from app.services.user_service import UserService
 
@@ -25,32 +24,26 @@ async def get_workspace_entry(
     if binding is None:
         return WorkspaceEntryResponse(
             ready=False,
+            hasWorkspace=False,
             runtimeId=None,
             browserUrl=None,
-            reason=WorkspaceEntryReason.runtime_not_found,
+            reason="RUNTIME_PREPARING",
         )
 
     if binding.observed_state == ObservedState.RUNNING and binding.browser_url:
         return WorkspaceEntryResponse(
             ready=True,
+            hasWorkspace=True,
             runtimeId=binding.runtime_id,
             browserUrl=binding.browser_url,
             reason=None,
         )
 
-    if binding.observed_state == ObservedState.CREATING:
-        reason = WorkspaceEntryReason.runtime_starting
-    elif binding.observed_state in (ObservedState.STOPPED, ObservedState.DELETED):
-        reason = WorkspaceEntryReason.runtime_not_running
-    elif binding.observed_state == ObservedState.ERROR:
-        reason = WorkspaceEntryReason.runtime_error
-    else:
-        reason = WorkspaceEntryReason.runtime_not_running
-
     return WorkspaceEntryResponse(
         ready=False,
+        hasWorkspace=True,
         runtimeId=binding.runtime_id,
         browserUrl=None,
-        reason=reason,
+        reason="RUNTIME_PREPARING",
     )
 

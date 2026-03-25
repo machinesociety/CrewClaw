@@ -81,8 +81,14 @@ def test_disabled_user_business_interfaces_all_return_user_disabled(client):
             else:
                 resp = client.request("DELETE", path, headers=headers, json=payload)
 
-            assert resp.status_code == status.HTTP_403_FORBIDDEN
-            assert resp.json()["code"] == "USER_DISABLED"
+            if path == "/api/v1/auth/access":
+                # v0.11: access 永远 200
+                assert resp.status_code == status.HTTP_200_OK
+                assert resp.json()["allowed"] is False
+                assert resp.json()["reason"] == "USER_DISABLED"
+            else:
+                assert resp.status_code == status.HTTP_403_FORBIDDEN
+                assert resp.json()["code"] == "USER_DISABLED"
     finally:
         client.app.dependency_overrides.pop(get_sqlalchemy_user_repository, None)
 

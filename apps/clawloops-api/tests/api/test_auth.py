@@ -24,9 +24,9 @@ def test_auth_me_ok_with_subject_header(client):
         assert resp.status_code == status.HTTP_200_OK
         data = resp.json()
         assert data["authenticated"] is True
-        assert data["userId"]
-        assert data["subjectId"] == "authentik:12345"
-        assert data["tenantId"] == "t_default"
+        assert data["user"]["userId"]
+        assert data["user"]["subjectId"] == "authentik:12345"
+        assert data["user"]["tenantId"] == "t_default"
     finally:
         client.app.dependency_overrides.pop(get_sqlalchemy_user_repository, None)
 
@@ -60,9 +60,11 @@ def test_auth_access_disabled_user_blocked(client):
     try:
         headers = {"X-Authentik-Subject": "authentik:disabled"}
         resp = client.get("/api/v1/auth/access", headers=headers)
-        assert resp.status_code == status.HTTP_403_FORBIDDEN
+        # v0.11: auth/access 永远 200，仅用于状态判断
+        assert resp.status_code == status.HTTP_200_OK
         data = resp.json()
-        assert data["code"] == "USER_DISABLED"
+        assert data["allowed"] is False
+        assert data["reason"] == "USER_DISABLED"
     finally:
         client.app.dependency_overrides.pop(get_sqlalchemy_user_repository, None)
 
@@ -92,8 +94,8 @@ def test_auth_me_promotes_to_admin_when_jwt_claims_groups_only(client):
         resp = client.get("/api/v1/auth/me", headers=headers)
         assert resp.status_code == status.HTTP_200_OK
         data = resp.json()
-        assert data["role"] == "admin"
-        assert data["isAdmin"] is True
+        assert data["user"]["role"] == "admin"
+        assert data["user"]["isAdmin"] is True
     finally:
         client.app.dependency_overrides.pop(get_sqlalchemy_user_repository, None)
 
@@ -110,8 +112,8 @@ def test_auth_me_promotes_when_authentik_builtin_admins_group_name(client):
         resp = client.get("/api/v1/auth/me", headers=headers)
         assert resp.status_code == status.HTTP_200_OK
         data = resp.json()
-        assert data["role"] == "admin"
-        assert data["isAdmin"] is True
+        assert data["user"]["role"] == "admin"
+        assert data["user"]["isAdmin"] is True
     finally:
         client.app.dependency_overrides.pop(get_sqlalchemy_user_repository, None)
 
@@ -127,8 +129,8 @@ def test_auth_me_promotes_to_admin_when_authentik_groups_match(client):
         resp = client.get("/api/v1/auth/me", headers=headers)
         assert resp.status_code == status.HTTP_200_OK
         data = resp.json()
-        assert data["role"] == "admin"
-        assert data["isAdmin"] is True
+        assert data["user"]["role"] == "admin"
+        assert data["user"]["isAdmin"] is True
     finally:
         client.app.dependency_overrides.pop(get_sqlalchemy_user_repository, None)
 
@@ -153,8 +155,8 @@ def test_auth_me_demotes_admin_when_groups_header_present_but_not_admin_group(cl
         resp = client.get("/api/v1/auth/me", headers=headers)
         assert resp.status_code == status.HTTP_200_OK
         data = resp.json()
-        assert data["role"] == "user"
-        assert data["isAdmin"] is False
+        assert data["user"]["role"] == "user"
+        assert data["user"]["isAdmin"] is False
     finally:
         client.app.dependency_overrides.pop(get_sqlalchemy_user_repository, None)
 
@@ -176,8 +178,8 @@ def test_auth_me_preserves_admin_when_groups_header_absent(client):
         resp = client.get("/api/v1/auth/me", headers=headers)
         assert resp.status_code == status.HTTP_200_OK
         data = resp.json()
-        assert data["role"] == "admin"
-        assert data["isAdmin"] is True
+        assert data["user"]["role"] == "admin"
+        assert data["user"]["isAdmin"] is True
     finally:
         client.app.dependency_overrides.pop(get_sqlalchemy_user_repository, None)
 
