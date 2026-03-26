@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "clawloops:contracts:baseline-v0.12-lightweight-auth:InvitationPreview",
+  "title": "InvitationPreview",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["valid"],
+  "properties": {
+    "valid": { "type": "boolean" },
+    "invitation": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "targetEmail",
+            "workspaceId",
+            "workspaceName",
+            "role",
+            "status",
+            "expiresAt"
+          ],
+          "properties": {
+            "invitationId": { "type": ["string", "null"] },
+            "targetEmail": { "type": "string" },
+            "loginUsername": { "type": ["string", "null"] },
+            "workspaceId": { "type": "string" },
+            "workspaceName": { "type": "string" },
+            "role": { "type": "string" },
+            "status": { "type": "string", "enum": ["pending", "consumed", "revoked"] },
+            "expiresAt": { "type": "string" }
+          }
+        },
+        { "type": "null" }
+      ]
+    }
+  }
+}
+

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 
 
@@ -23,6 +24,12 @@ class User:
     tenant_id: str
     role: UserRole
     status: UserStatus = UserStatus.ACTIVE
+    username: str | None = None
+    password_hash: str | None = None
+    must_change_password: bool = False
+    password_change_reason: str | None = None
+    created_at: datetime | None = None
+    last_login_at: datetime | None = None
 
     def is_disabled(self) -> bool:
         return self.status == UserStatus.DISABLED

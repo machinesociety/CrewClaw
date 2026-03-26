@@ -1,0 +1,91 @@
+{
+  "baselineVersion": "v0.12-lightweight-auth",
+  "frozenAt": "2026-03-26",
+  "rules": [
+    {
+      "id": "user_response_forbid_internalEndpoint",
+      "appliesTo": [
+        "GET /api/v1/users/me/runtime",
+        "GET /api/v1/users/me/runtime/status",
+        "GET /api/v1/workspace-entry"
+      ],
+      "forbidFields": ["internalEndpoint"],
+      "reason": "internalEndpoint 仅内部可见，前端与浏览器只允许使用 browserUrl"
+    },
+    {
+      "id": "user_runtime_vs_status_boundary",
+      "appliesTo": ["GET /api/v1/users/me/runtime/status"],
+      "forbidFields": ["volumeId", "imageRef", "retentionPolicy", "internalEndpoint"],
+      "allowFields": [
+        "runtimeId",
+        "desiredState",
+        "observedState",
+        "task",
+        "ready",
+        "browserUrl",
+        "reason",
+        "lastError"
+      ],
+      "reason": "status 接口是高频轮询投影，不返回稳定资源详情字段"
+    },
+    {
+      "id": "workspace_entry_is_only_redirect_gate",
+      "appliesTo": ["GET /api/v1/workspace-entry"],
+      "mustContainFields": ["ready", "runtimeId", "browserUrl", "reason"],
+      "reason": "workspace-entry 是唯一跳转入口，前端只在 ready=true 时跳转"
+    },
+    {
+      "id": "disabled_user_global_semantics",
+      "appliesTo": [
+        "GET /api/v1/users/me/runtime",
+        "GET /api/v1/users/me/runtime/status",
+        "POST /api/v1/users/me/runtime/start",
+        "POST /api/v1/users/me/runtime/stop",
+        "POST /api/v1/users/me/runtime/delete",
+        "GET /api/v1/models",
+        "GET /api/v1/usage/summary",
+        "GET /api/v1/workspace-entry",
+        "GET /api/v1/users/me/quota",
+        "GET /api/v1/admin/home",
+        "GET /api/v1/admin/users",
+        "GET /api/v1/admin/users/{userId}",
+        "PATCH /api/v1/admin/users/{userId}/status",
+        "GET /api/v1/admin/users/{userId}/runtime",
+        "GET /api/v1/admin/invitations",
+        "POST /api/v1/admin/invitations",
+        "GET /api/v1/admin/invitations/{invitationId}",
+        "POST /api/v1/admin/invitations/{invitationId}/revoke",
+        "POST /api/v1/admin/invitations/{invitationId}/resend",
+        "GET /api/v1/admin/models",
+        "PUT /api/v1/admin/models/{modelId}",
+        "GET /api/v1/admin/provider-credentials",
+        "POST /api/v1/admin/provider-credentials",
+        "POST /api/v1/admin/provider-credentials/{credentialId}/verify",
+        "DELETE /api/v1/admin/provider-credentials/{credentialId}",
+        "GET /api/v1/admin/usage/summary"
+      ],
+      "mustReturnError": { "http": 403, "code": "USER_DISABLED" },
+      "except": ["GET /api/v1/auth/me", "GET /api/v1/auth/access", "POST /api/v1/auth/logout"],
+      "reason": "disabled 用户除 auth/me 与 auth/access 与 logout 外统一收口为 403 USER_DISABLED"
+    },
+    {
+      "id": "auth_access_always_200",
+      "appliesTo": ["GET /api/v1/auth/access"],
+      "mustReturnHttp": 200,
+      "reason": "auth/access 永远 200，仅用于状态判断"
+    },
+    {
+      "id": "forbid_auth_post_login",
+      "appliesTo": ["POST /api/v1/auth/post-login"],
+      "forbidPaths": ["POST /api/v1/auth/post-login"],
+      "reason": "v0.12 删除 post-login：登录改为 inline，invitation accept 直接建 session"
+    },
+    {
+      "id": "runtime_delete_post_only",
+      "appliesTo": ["POST /api/v1/users/me/runtime/delete"],
+      "forbidPaths": ["DELETE /api/v1/users/me/runtime"],
+      "reason": "删除 runtime 使用 POST，不依赖 DELETE body"
+    }
+  ]
+}
+

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "clawloops:contracts:baseline-v0.12-lightweight-auth:AuthAccessResponse",
+  "title": "AuthAccessResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["allowed"],
+  "properties": {
+    "allowed": { "type": "boolean" },
+    "reason": {
+      "type": ["string", "null"],
+      "enum": ["USER_DISABLED", "PASSWORD_CHANGE_REQUIRED", null]
+    }
+  }
+}
+

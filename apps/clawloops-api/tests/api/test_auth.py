@@ -7,13 +7,23 @@ from app.repositories.user_repository import InMemoryUserRepository
 
 def test_auth_me_unauthenticated(client):
     resp = client.get("/api/v1/auth/me")
-    assert resp.status_code == status.HTTP_401_UNAUTHORIZED
+    assert resp.status_code == status.HTTP_200_OK
     data = resp.json()
-    assert data["code"] == "UNAUTHENTICATED"
+    assert data["authenticated"] is False
+    assert data.get("user") is None
 
 
 def test_auth_me_ok_with_subject_header(client):
     repo = InMemoryUserRepository()
+    repo.save(
+        User(
+            user_id="u_001",
+            subject_id="authentik:12345",
+            tenant_id="t_default",
+            role=UserRole.USER,
+            status=UserStatus.ACTIVE,
+        )
+    )
     client.app.dependency_overrides[get_sqlalchemy_user_repository] = lambda: repo
     try:
         headers = {"X-Authentik-Subject": "authentik:12345"}
@@ -21,15 +31,24 @@ def test_auth_me_ok_with_subject_header(client):
         assert resp.status_code == status.HTTP_200_OK
         data = resp.json()
         assert data["authenticated"] is True
-        assert data["userId"]
-        assert data["subjectId"] == "authentik:12345"
-        assert data["tenantId"] == "t_default"
+        assert data["user"]["userId"] == "u_001"
+        assert data["user"]["subjectId"] == "authentik:12345"
+        assert data["user"]["tenantId"] == "t_default"
     finally:
         client.app.dependency_overrides.pop(get_sqlalchemy_user_repository, None)
 
 
 def test_auth_access_allowed_for_active_user(client):
     repo = InMemoryUserRepository()
+    repo.save(
+        User(
+            user_id="u_active",
+            subject_id="authentik:active",
+            tenant_id="t_default",
+            role=UserRole.USER,
+            status=UserStatus.ACTIVE,
+        )
+    )
     client.app.dependency_overrides[get_sqlalchemy_user_repository] = lambda: repo
     try:
         headers = {"X-Authentik-Subject": "authentik:active"}
@@ -57,9 +76,10 @@ def test_auth_access_disabled_user_blocked(client):
     try:
         headers = {"X-Authentik-Subject": "authentik:disabled"}
         resp = client.get("/api/v1/auth/access", headers=headers)
-        assert resp.status_code == status.HTTP_403_FORBIDDEN
+        assert resp.status_code == status.HTTP_200_OK
         data = resp.json()
-        assert data["code"] == "USER_DISABLED"
+        assert data["allowed"] is False
+        assert data["reason"] == "USER_DISABLED"
     finally:
         client.app.dependency_overrides.pop(get_sqlalchemy_user_repository, None)
 
@@ -68,7 +88,7 @@ def test_auth_options_available(client):
     resp = client.get("/api/v1/auth/options")
     assert resp.status_code == status.HTTP_200_OK
     data = resp.json()
-    assert data["provider"] == "authentik"
+    assert data["provider"] == "clawloops"
     assert isinstance(data["methods"], list)
     assert any(method["type"] == "local_password" and method["enabled"] is True for method in data["methods"])
 

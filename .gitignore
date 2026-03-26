@@ -10,3 +10,4 @@ AUTHENTIK_Implementation_Guide.md
 .pnpm-store/
 
 docs/
+__pycache__/

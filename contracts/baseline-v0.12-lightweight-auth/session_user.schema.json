@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "clawloops:contracts:baseline-v0.12-lightweight-auth:SessionUser",
+  "title": "SessionUser",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "userId",
+    "subjectId",
+    "tenantId",
+    "role",
+    "status",
+    "auth",
+    "isAdmin",
+    "isDisabled"
+  ],
+  "properties": {
+    "userId": { "type": "string", "minLength": 1 },
+    "subjectId": { "type": "string", "minLength": 1 },
+    "username": { "type": ["string", "null"] },
+    "tenantId": { "type": "string", "minLength": 1 },
+    "role": { "type": "string", "enum": ["admin", "user"] },
+    "status": { "type": "string", "enum": ["active", "disabled"] },
+    "auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "method"],
+      "properties": {
+        "provider": { "type": "string", "enum": ["clawloops"] },
+        "method": { "type": "string", "enum": ["local_password"] }
+      }
+    },
+    "isAdmin": { "type": "boolean" },
+    "isDisabled": { "type": "boolean" },
+    "mustChangePassword": { "type": ["boolean", "null"] },
+    "passwordChangeReason": { "type": ["string", "null"] }
+  }
+}
+

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "clawloops:contracts:baseline-v0.12-lightweight-auth:InvitationAcceptResult",
+  "title": "InvitationAcceptResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["accepted"],
+  "properties": {
+    "accepted": { "type": "boolean" },
+    "replayed": { "type": ["boolean", "null"] },
+    "redirectTo": { "type": ["string", "null"] },
+    "user": {
+      "anyOf": [
+        { "$ref": "clawloops:contracts:baseline-v0.12-lightweight-auth:SessionUser" },
+        { "type": "null" }
+      ]
+    },
+    "workspaceBinding": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["workspaceId", "workspaceName", "role"],
+          "properties": {
+            "workspaceId": { "type": "string" },
+            "workspaceName": { "type": "string" },
+            "role": { "type": "string" }
+          }
+        },
+        { "type": "null" }
+      ]
+    }
+  }
+}
+

@@ -3,9 +3,11 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import AuthContext, build_auth_context_from_request
 from app.core.database import get_db_session, init_db
-from app.core.errors import UserDisabledError
+from app.core.errors import PasswordChangeRequiredError, UnauthenticatedError, UserDisabledError
 from app.core.settings import AppSettings, get_settings
 from app.infra.runtime_manager_client import RuntimeManagerClient
+from app.repositories.session_repository import SqlAlchemySessionRepository, SessionRepository
+from app.repositories.invitation_repository import InvitationRepository, SqlAlchemyInvitationRepository
 from app.repositories.user_repository import (
     InMemoryUserRepository,
     SqlAlchemyUserRepository,
@@ -69,17 +71,44 @@ def get_sqlalchemy_user_repository(
     return SqlAlchemyUserRepository(db)
 
 
+def get_session_repository(
+    db: Session = Depends(get_db_session_dep),
+) -> SessionRepository:
+    return SqlAlchemySessionRepository(db)
+
+
+def get_invitation_repository(
+    db: Session = Depends(get_db_session_dep),
+) -> InvitationRepository:
+    return SqlAlchemyInvitationRepository(db)
+
+
 def get_auth_context(
     request: Request,
     settings: AppSettings = Depends(get_app_settings),
     user_repo: UserRepository = Depends(get_sqlalchemy_user_repository),
+    session_repo: SessionRepository = Depends(get_session_repository),
 ) -> AuthContext:
-    return build_auth_context_from_request(request, settings, user_repo)
+    return build_auth_context_from_request(request, settings, user_repo, session_repo)
+
+
+def try_get_auth_context(
+    request: Request,
+    settings: AppSettings = Depends(get_app_settings),
+    user_repo: UserRepository = Depends(get_sqlalchemy_user_repository),
+    session_repo: SessionRepository = Depends(get_session_repository),
+) -> AuthContext | None:
+    try:
+        return build_auth_context_from_request(request, settings, user_repo, session_repo)
+    except UnauthenticatedError:
+        return None
 
 
 def require_active_user(ctx: AuthContext = Depends(get_auth_context)) -> AuthContext:
     if ctx.isDisabled:
         raise UserDisabledError()
+    if ctx.mustChangePassword:
+        raise PasswordChangeRequiredError()
     return ctx
 
 

@@ -3,7 +3,14 @@
  * Design: Crafted Dark - Technical Platform
  * All calls go to /api/v1/* only. Never call /internal/* from frontend.
  *
- * Based on API_Spec.md v0.8-authentik-runtime-frozen
+ * Based on API_Spec.md v0.5-lightweight-auth-revision
+ * Key changes from v0.4:
+ * - Login is now inline username/password form (POST /auth/login)
+ * - /post-login removed; invitation accept is /public/invitations/{token}/accept
+ * - SessionUser gains username, mustChangePassword, passwordChangeReason
+ * - AuthOptionsResponse gains passwordPolicy and features
+ * - New: LoginRequest, LoginResult, PasswordChangeRequest, PasswordChangeResult
+ * - New: InvitationAcceptRequest, InvitationAcceptResult
  */
 
 // ============================================================
@@ -32,6 +39,7 @@ export type MutationState =
 export interface SessionUser {
   userId: string;
   subjectId: string;
+  username?: string;           // v0.5: preferred login username
   tenantId: string;
   role: 'admin' | 'user';
   status: 'active' | 'disabled';
@@ -41,6 +49,8 @@ export interface SessionUser {
   };
   isAdmin: boolean;
   isDisabled: boolean;
+  mustChangePassword?: boolean;         // v0.5: true for seed admin first login
+  passwordChangeReason?: string | null; // v0.5: reason for forced change
 }
 
 export interface AuthMeResponse {
@@ -55,20 +65,67 @@ export interface AccessGate {
 
 export interface AuthOption {
   type: string;
-  enabled: boolean;
+  enabled?: boolean;
   label: string;
+}
+
+export interface PasswordPolicy {
+  minLength: number;
+  maxLength: number;
+  requireLetter: boolean;
+  requireNumber: boolean;
+  disallowUsernameAsPassword: boolean;
+  disallowDefaultAdminPassword?: boolean;
 }
 
 export interface AuthOptionsResponse {
   provider: string;
   methods: AuthOption[];
+  passwordPolicy?: PasswordPolicy;
+  features?: {
+    forcedPasswordChange?: boolean;
+    passwordRecovery?: boolean;
+    thirdPartyLogin?: boolean;
+  };
 }
 
+// v0.5: Inline login
+export interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+export interface LoginResult {
+  redirectTo?: string;           // '/admin' | '/app' | '/force-password-change'
+  mustChangePassword?: boolean;
+  user?: SessionUser;
+}
+
+// v0.5: Forced password change
+export interface PasswordChangeRequest {
+  currentPassword: string;
+  newPassword: string;
+  newPasswordConfirm: string;
+}
+
+export interface PasswordChangeResult {
+  changed: boolean;
+  redirectTo?: string;
+  user?: SessionUser;
+}
+
+export interface LogoutResult {
+  ok: boolean;
+}
+
+/** @deprecated v0.5: /post-login removed. Kept for type compatibility only. */
 export interface PostLoginResult {
-  status: string;
+  status?: string;
   userId?: string;
+  entryType?: 'workspace' | 'admin_console';
   hasWorkspace?: boolean;
   workspaceId?: string | null;
+  workspaceName?: string | null;
   needsWorkspaceSelection?: boolean;
   invitationApplied?: boolean;
   redirectTo?: string;
@@ -79,7 +136,9 @@ export interface PostLoginResult {
 export interface InvitationPreview {
   valid: boolean;
   invitation?: {
+    invitationId?: string;
     targetEmail: string;
+    loginUsername?: string;  // v0.5: preferred display name; show as primary if present
     workspaceId: string;
     workspaceName: string;
     role: string;
@@ -88,12 +147,32 @@ export interface InvitationPreview {
   };
 }
 
+/** @deprecated v0.5: /start removed; use /accept instead */
 export interface InvitationStartResult {
   status: string;
   pendingInvitationSession?: {
     ttlSeconds: number;
   };
   redirectUrl?: string;
+}
+
+// v0.5: In-page accept with password setup
+export interface InvitationAcceptRequest {
+  username: string;
+  password: string;
+  passwordConfirm: string;
+}
+
+export interface InvitationAcceptResult {
+  accepted: boolean;
+  replayed?: boolean;          // true = idempotent replay; treat as success
+  redirectTo?: string;         // '/app'
+  user?: SessionUser;
+  workspaceBinding?: {
+    workspaceId: string;
+    workspaceName: string;
+    role: string;
+  };
 }
 
 // Runtime
@@ -133,8 +212,10 @@ export interface RuntimeTask {
 
 export interface WorkspaceEntry {
   ready: boolean;
+  hasWorkspace?: boolean;
   runtimeId?: string;
   browserUrl?: string;
+  reason?: string | null;
 }
 
 export interface RuntimeActionResponse {
@@ -176,6 +257,7 @@ export interface AdminUserDetail extends AdminUser {
 export interface AdminInvitation {
   invitationId: string;
   targetEmail: string;
+  loginUsername?: string;  // preferred login username for no-real-email users
   workspaceId: string;
   role: string;
   status: 'pending' | 'consumed' | 'revoked';
@@ -188,6 +270,7 @@ export interface AdminInvitation {
 
 export interface CreateInvitationRequest {
   targetEmail: string;
+  loginUsername?: string;  // optional: preferred login username
   workspaceId: string;
   role: string;
   expiresInHours: number;
@@ -208,6 +291,43 @@ export interface CreateCredentialRequest {
   name?: string;
   apiKey?: string;
   [key: string]: unknown;
+}
+
+// Admin - Home
+export interface AdminHomeSummary {
+  totalUsers: number;
+  activeUsers: number;
+  disabledUsers: number;
+  pendingInvitations: number;
+  expiringInvitations24h: number;
+  runningRuntimes: number;
+  runtimeErrors: number;
+}
+
+export interface AdminHomePendingInvitation {
+  invitationId: string;
+  targetEmail: string;
+  loginUsername?: string;
+  workspaceId: string;
+  role: string;
+  expiresAt: string;
+  status: 'pending' | 'consumed' | 'revoked';
+}
+
+export interface AdminHomeRuntimeAlert {
+  userId: string;
+  runtimeId: string;
+  observedState: string;
+  lastError?: string | null;
+  updatedAt?: string;
+}
+
+export interface AdminHome {
+  summary: AdminHomeSummary;
+  attention: {
+    pendingInvitations: AdminHomePendingInvitation[];
+    runtimeAlerts: AdminHomeRuntimeAlert[];
+  };
 }
 
 // Admin - Usage
@@ -300,6 +420,14 @@ export const authApi = {
   me: () => get<AuthMeResponse>('/auth/me'),
   access: () => get<AccessGate>('/auth/access'),
   options: () => get<AuthOptionsResponse>('/auth/options'),
+  /** v0.5: inline username/password login */
+  login: (data: LoginRequest) => post<LoginResult>('/auth/login', data),
+  /** v0.12: revoke server-side session and clear cookie */
+  logout: () => post<LogoutResult>('/auth/logout'),
+  /** v0.5: forced password change for seed admin first login */
+  changePassword: (data: PasswordChangeRequest) =>
+    post<PasswordChangeResult>('/auth/password/change', data),
+  /** @deprecated v0.5: use login() instead */
   postLogin: (body?: { pendingInvitationSessionId?: string }) =>
     post<PostLoginResult>('/auth/post-login', body || {}),
 };
@@ -311,6 +439,10 @@ export const authApi = {
 export const invitationPublicApi = {
   preview: (token: string) =>
     get<InvitationPreview>(`/public/invitations/${token}`),
+  /** v0.5: in-page accept with username + password setup */
+  accept: (token: string, data: InvitationAcceptRequest) =>
+    post<InvitationAcceptResult>(`/public/invitations/${token}/accept`, data),
+  /** @deprecated v0.5: /start removed */
   start: (token: string) =>
     post<InvitationStartResult>(`/public/invitations/${token}/start`),
 };
@@ -350,6 +482,9 @@ export const modelsApi = {
 // ============================================================
 
 export const adminApi = {
+  // Home
+  home: () => get<AdminHome>('/admin/home'),
+
   // Users
   users: {
     list: () => get<{ users: AdminUser[] }>('/admin/users'),

@@ -4,6 +4,7 @@ from app.core import dependencies
 from app.core.auth import build_auth_context_from_request
 from app.core.settings import AppSettings
 from app.domain.users import User, UserRole, UserStatus
+from app.repositories.session_repository import InMemorySessionRepository
 from app.repositories.user_repository import InMemoryUserRepository
 from app.services.user_service import UserService
 from app.repositories.user_repository import UserRuntimeBindingRepository
@@ -22,6 +23,15 @@ class InMemoryBindingRepo(UserRuntimeBindingRepository):
 
 def test_auth_context_and_user_service_integration():
     user_repo = InMemoryUserRepository()
+    user_repo.save(
+        User(
+            user_id="u_int_user",
+            subject_id="authentik:int-user",
+            tenant_id="t_default",
+            role=UserRole.USER,
+            status=UserStatus.ACTIVE,
+        )
+    )
     binding_repo = InMemoryBindingRepo()
     service = UserService(
         user_repo=user_repo,
@@ -36,8 +46,9 @@ def test_auth_context_and_user_service_integration():
     }
     request = Request(scope)
     settings = AppSettings()
+    session_repo = InMemorySessionRepository()
 
-    ctx = build_auth_context_from_request(request, settings, user_repo)
+    ctx = build_auth_context_from_request(request, settings, user_repo, session_repo)
     assert ctx.subjectId == "authentik:int-user"
     user = service.get_or_create_user(ctx.subjectId)
     assert user.user_id == ctx.userId

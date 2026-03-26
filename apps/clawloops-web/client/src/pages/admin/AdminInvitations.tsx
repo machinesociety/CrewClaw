@@ -55,6 +55,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { toast } from 'sonner';
+import { Link } from 'wouter';
 import {
   RefreshCw,
   Plus,
@@ -62,6 +63,7 @@ import {
   Send,
   Mail,
   Loader2,
+  User,
 } from 'lucide-react';
 
 // ============================================================
@@ -77,6 +79,7 @@ interface CreateDialogProps {
 function CreateInvitationDialog({ open, onOpenChange, onCreated }: CreateDialogProps) {
   const [form, setForm] = useState<CreateInvitationRequest>({
     targetEmail: '',
+    loginUsername: '',
     workspaceId: '',
     role: 'user',
     expiresInHours: 72,
@@ -86,8 +89,12 @@ function CreateInvitationDialog({ open, onOpenChange, onCreated }: CreateDialogP
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.targetEmail || !form.workspaceId) {
-      setError('邮箱和工作区 ID 为必填项');
+    if (!form.workspaceId) {
+      setError('工作区 ID 为必填项');
+      return;
+    }
+    if (!form.targetEmail && !form.loginUsername) {
+      setError('目标邮箱和登录用户名至少填写一个');
       return;
     }
     setLoading(true);
@@ -97,7 +104,7 @@ function CreateInvitationDialog({ open, onOpenChange, onCreated }: CreateDialogP
       toast.success('邀请已创建');
       onCreated();
       onOpenChange(false);
-      setForm({ targetEmail: '', workspaceId: '', role: 'user', expiresInHours: 72 });
+      setForm({ targetEmail: '', loginUsername: '', workspaceId: '', role: 'user', expiresInHours: 72 });
     } catch (e) {
       setError(isAppError(e) ? e.message : '创建失败');
     } finally {
@@ -117,15 +124,28 @@ function CreateInvitationDialog({ open, onOpenChange, onCreated }: CreateDialogP
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="email">目标邮箱 *</Label>
+            <Label htmlFor="loginUsername">
+              登录用户名
+              <span className="text-muted-foreground text-xs ml-1">(无真实邮箱用户优先填写)</span>
+            </Label>
+            <Input
+              id="loginUsername"
+              placeholder="alice"
+              value={form.loginUsername || ''}
+              onChange={(e) => setForm((f) => ({ ...f, loginUsername: e.target.value }))}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="email">目标邮箱</Label>
             <Input
               id="email"
               type="email"
               placeholder="user@example.com"
               value={form.targetEmail}
               onChange={(e) => setForm((f) => ({ ...f, targetEmail: e.target.value }))}
-              required
             />
+            <p className="text-xs text-muted-foreground">如果填写了登录用户名，邮箱可不填</p>
           </div>
 
           <div className="space-y-1.5">
@@ -313,6 +333,7 @@ function AdminInvitationsContent() {
               <TableHeader>
                 <TableRow>
                   <TableHead>邀请 ID</TableHead>
+                  <TableHead>登录账号</TableHead>
                   <TableHead>目标邮箱</TableHead>
                   <TableHead>工作区 ID</TableHead>
                   <TableHead>角色</TableHead>
@@ -326,7 +347,19 @@ function AdminInvitationsContent() {
                 {invitations.map((inv) => (
                   <TableRow key={inv.invitationId}>
                     <TableCell>
-                      <MonoText>{inv.invitationId}</MonoText>
+                      <Link href={`/admin/invitations/${inv.invitationId}`}>
+                        <MonoText className="text-primary/80 hover:text-primary cursor-pointer transition-colors">{inv.invitationId}</MonoText>
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      {inv.loginUsername ? (
+                        <div className="flex items-center gap-1.5">
+                          <User className="w-3 h-3 text-muted-foreground" />
+                          <span className="text-sm font-medium">{inv.loginUsername}</span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <span className="text-sm">{inv.targetEmail}</span>

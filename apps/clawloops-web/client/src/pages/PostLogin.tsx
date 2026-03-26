@@ -110,15 +110,26 @@ export default function PostLoginPage() {
     try {
       const result: PostLoginResult = await authApi.postLogin();
 
-      // Determine next step based on result
+      // Per UI_状态模型.md §4.3: entryType=admin_console → /admin
+      const entryType = (result as { entryType?: string }).entryType;
       const hasWorkspace = result.hasWorkspace ?? (result.redirectTo === '/workspace-entry');
-      const needsSelection = result.needsWorkspaceSelection ?? false;
-
-      if (hasWorkspace) {
+      if (entryType === 'admin_console' || result.redirectTo === '/admin') {
         setPageState('postLoginSucceeded');
-        // Navigate to workspace-entry
         setTimeout(() => {
-          navigate('/workspace-entry');
+          navigate('/admin');
+        }, 800);
+      } else if (hasWorkspace) {
+        setPageState('postLoginSucceeded');
+        // Per UI_状态模型.md §4.3: regular user goes to /app
+        // Pass invitationApplied flag so Dashboard can show first-login confirmation banner
+        const params = new URLSearchParams();
+        if (result.invitationApplied) {
+          params.set('invitationApplied', 'true');
+          if (result.workspaceName) params.set('workspaceName', result.workspaceName);
+        }
+        const target = params.toString() ? `/app?${params.toString()}` : '/app';
+        setTimeout(() => {
+          navigate(target);
         }, 800);
       } else {
         setPageState('workspaceMissing');

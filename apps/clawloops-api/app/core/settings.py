@@ -9,7 +9,14 @@ class AppSettings(BaseSettings):
     env: str = "dev"
     log_level: str = "INFO"
 
-    # Authentik / 认证相关头部配置
+    # 轻量认证（server-side session）
+    session_cookie_name: str = "clawloops_session"
+    session_ttl_seconds: int = 60 * 60 * 24 * 7  # 7 days
+    cookie_secure: bool = False
+    cookie_samesite: str = "lax"  # "lax" | "strict" | "none"
+    cookie_domain: str | None = None
+
+    # 兼容保留：旧 Authentik 头/跳转配置（v0.12 不再使用）
     auth_header_subject: str = "X-Authentik-Subject"
     auth_header_email: str = "X-Authentik-Email"
     auth_header_groups: str = "X-Authentik-Groups"

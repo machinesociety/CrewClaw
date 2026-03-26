@@ -1,6 +1,8 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request, Response
 
-from app.core.dependencies import get_user_service
+from app.core.auth import AuthContext
+from app.core.dependencies import get_auth_context, get_user_service
+from app.core.errors import PasswordChangeRequiredError, UserDisabledError
 from app.domain.users import DesiredState, ObservedState, RetentionPolicy
 from app.schemas.internal import (
     ContainerStateResponse,
@@ -50,6 +52,32 @@ async def sync_user(
     """
     user = user_service.get_or_create_user(body.subjectId)
     return {"userId": user.user_id, "subjectId": user.subject_id, "tenantId": user.tenant_id}
+
+
+@router.get("/auth/workspace-access")
+async def workspace_access_gate(
+    request: Request,
+    response: Response,
+    ctx: AuthContext = Depends(get_auth_context),
+) -> dict:
+    """
+    workspace 子域统一网关鉴权入口（ForwardAuth 等价）。
+
+    约束：
+    - 依赖浏览器携带平台 session cookie
+    - 按 v0.12 语义：disabled / mustChangePassword 必须拒绝
+    """
+
+    if ctx.isDisabled:
+        raise UserDisabledError()
+    if ctx.mustChangePassword:
+        raise PasswordChangeRequiredError()
+
+    host = request.headers.get("host") or ""
+    response.headers["X-Clawloops-User-Id"] = ctx.userId
+    response.headers["X-Clawloops-Subject-Id"] = ctx.subjectId
+    response.headers["X-Clawloops-Workspace-Id"] = host
+    return {"ok": True}
 
 
 @router.post("/users/{user_id}/runtime-binding/ensure", response_model=RuntimeBindingSnapshot)

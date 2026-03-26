@@ -1,5 +1,8 @@
 from fastapi import status
+from app.core.dependencies import get_sqlalchemy_user_repository
+from app.domain.users import User, UserRole, UserStatus
 from app.repositories.model_repository import reset_inmemory_model_repositories
+from app.repositories.user_repository import InMemoryUserRepository
 
 def _auth_headers(subject: str = "authentik:user1") -> dict[str, str]:
     return {"X-Authentik-Subject": subject}
@@ -7,6 +10,17 @@ def _auth_headers(subject: str = "authentik:user1") -> dict[str, str]:
 
 def test_models_list_and_usage_summary(client):
     reset_inmemory_model_repositories()
+    repo = InMemoryUserRepository()
+    repo.save(
+        User(
+            user_id="u_user1",
+            subject_id="authentik:user1",
+            tenant_id="t_default",
+            role=UserRole.USER,
+            status=UserStatus.ACTIVE,
+        )
+    )
+    client.app.dependency_overrides[get_sqlalchemy_user_repository] = lambda: repo
     resp = client.get("/api/v1/models", headers=_auth_headers())
     assert resp.status_code == status.HTTP_200_OK
     data = resp.json()

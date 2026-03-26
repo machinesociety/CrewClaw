@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from typing import Generator
 
+import os
+import sys
+
 from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 from app.core.settings import AppSettings, get_settings
@@ -21,6 +25,13 @@ def _build_database_url(settings: AppSettings) -> str:
     if settings.database_url:
         return settings.database_url
 
+    # 测试环境默认使用内存数据库，避免写入工作区文件系统。
+    is_pytest = bool(os.environ.get("PYTEST_CURRENT_TEST")) or ("pytest" in sys.modules) or any(
+        "pytest" in arg for arg in sys.argv
+    )
+    if settings.env == "test" or is_pytest:
+        return "sqlite+pysqlite:///:memory:"
+
     # 默认使用本地 SQLite 文件，避免额外依赖。
     return "sqlite:///./clawloops.db"
 
@@ -36,7 +47,14 @@ def create_engine_from_settings(settings: AppSettings | None = None):
         # SQLite 需要额外的线程选项。
         connect_args["check_same_thread"] = False
 
-    engine = create_engine(database_url, connect_args=connect_args)
+    if database_url.startswith("sqlite+pysqlite:///:memory:"):
+        engine = create_engine(
+            database_url,
+            connect_args=connect_args,
+            poolclass=StaticPool,
+        )
+    else:
+        engine = create_engine(database_url, connect_args=connect_args)
     return engine
 
 
@@ -62,6 +80,8 @@ def init_db() -> None:
     """
 
     # 延迟导入以避免循环依赖。
+    from app.models import invitation as invitation_models  # noqa: F401
+    from app.models import session as session_models  # noqa: F401
     from app.models import user as user_models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)

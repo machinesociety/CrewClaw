@@ -2,7 +2,16 @@
  * RouteGuard - Route-level access control
  * Design: Crafted Dark - ClawLoops Platform
  *
- * Implements the application startup state machine per UI_状态模型.md §4.1
+ * v0.5 Guard order (per UI_状态模型.md §5 and 页面调用流程_BFF编排.md):
+ *   1. Is user authenticated? → /login
+ *   2. mustChangePassword=true? → /force-password-change
+ *   3. allowed=false (USER_DISABLED)? → /disabled
+ *   4. isAdmin required? → /403
+ *
+ * Route changes from v0.4:
+ *   - /error/disabled → /disabled
+ *   - /error/403     → /403
+ *   - /error/bootstrap removed (network errors → /login)
  */
 
 import { useAuth } from '@/contexts/AuthContext';
@@ -34,9 +43,14 @@ function BootingScreen() {
 }
 
 /**
- * RequireAuth - Requires authenticated + allowed user
- * Redirects to /login if unauthenticated
- * Shows disabled page if USER_DISABLED
+ * RequireAuth - Requires authenticated + allowed user (non-admin pages like /app, /workspace-entry)
+ *
+ * Guard order:
+ *   booting/checking → loading screen
+ *   unauthenticated  → /login
+ *   mustChangePassword → /force-password-change
+ *   disabledBlocked  → /disabled
+ *   authenticatedReady → render children
  */
 export function RequireAuth({ children }: GuardProps) {
   const { bootState } = useAuth();
@@ -49,20 +63,28 @@ export function RequireAuth({ children }: GuardProps) {
     return <Redirect to="/login" />;
   }
 
-  if (bootState === 'disabledBlocked') {
-    return <Redirect to="/error/disabled" />;
+  // v0.5: mustChangePassword blocks all business pages
+  if (bootState === 'mustChangePasswordBlocked') {
+    return <Redirect to="/force-password-change" />;
   }
 
-  if (bootState === 'bootstrapFailed') {
-    return <Redirect to="/error/bootstrap" />;
+  if (bootState === 'disabledBlocked') {
+    return <Redirect to="/disabled" />;
   }
 
   return <>{children}</>;
 }
 
 /**
- * RequireAdmin - Requires admin role
- * Redirects to /error/403 if not admin
+ * RequireAdmin - Requires admin role (for /admin/* pages)
+ *
+ * Guard order:
+ *   booting/checking → loading screen
+ *   unauthenticated  → /login
+ *   mustChangePassword → /force-password-change
+ *   disabledBlocked  → /disabled
+ *   !isAdmin         → /403
+ *   authenticatedReady + isAdmin → render children
  */
 export function RequireAdmin({ children }: GuardProps) {
   const { bootState, isAdmin } = useAuth();
@@ -75,16 +97,49 @@ export function RequireAdmin({ children }: GuardProps) {
     return <Redirect to="/login" />;
   }
 
-  if (bootState === 'disabledBlocked') {
-    return <Redirect to="/error/disabled" />;
+  // v0.5: mustChangePassword blocks admin pages too
+  if (bootState === 'mustChangePasswordBlocked') {
+    return <Redirect to="/force-password-change" />;
   }
 
-  if (bootState === 'bootstrapFailed') {
-    return <Redirect to="/error/bootstrap" />;
+  if (bootState === 'disabledBlocked') {
+    return <Redirect to="/disabled" />;
   }
 
   if (!isAdmin) {
-    return <Redirect to="/error/403" />;
+    return <Redirect to="/403" />;
+  }
+
+  return <>{children}</>;
+}
+
+/**
+ * RequireForcePasswordChange - Only for /force-password-change page
+ * Allows mustChangePasswordBlocked users; redirects others to their home
+ */
+export function RequireForcePasswordChange({ children }: GuardProps) {
+  const { bootState, isAdmin } = useAuth();
+
+  if (bootState === 'booting' || bootState === 'checkingSession' || bootState === 'checkingAccess') {
+    return <BootingScreen />;
+  }
+
+  if (bootState === 'unauthenticated') {
+    return <Redirect to="/login" />;
+  }
+
+  // Only mustChangePasswordBlocked users should be here
+  if (bootState === 'mustChangePasswordBlocked') {
+    return <>{children}</>;
+  }
+
+  // Already authenticated and no password change needed → go to home
+  if (bootState === 'authenticatedReady') {
+    return <Redirect to={isAdmin ? '/admin' : '/app'} />;
+  }
+
+  if (bootState === 'disabledBlocked') {
+    return <Redirect to="/disabled" />;
   }
 
   return <>{children}</>;
@@ -92,17 +147,21 @@ export function RequireAdmin({ children }: GuardProps) {
 
 /**
  * RedirectIfAuthenticated - For public pages like /login
- * Redirects to /app if already authenticated
+ * v0.5: Redirects admin → /admin, user → /app, mustChangePassword → /force-password-change
  */
 export function RedirectIfAuthenticated({ children }: GuardProps) {
-  const { bootState } = useAuth();
+  const { bootState, isAdmin } = useAuth();
 
   if (bootState === 'booting' || bootState === 'checkingSession') {
     return <BootingScreen />;
   }
 
+  if (bootState === 'mustChangePasswordBlocked') {
+    return <Redirect to="/force-password-change" />;
+  }
+
   if (bootState === 'authenticatedReady') {
-    return <Redirect to="/app" />;
+    return <Redirect to={isAdmin ? '/admin' : '/app'} />;
   }
 
   return <>{children}</>;

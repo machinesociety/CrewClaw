@@ -30,6 +30,9 @@ class UserRepository(ABC):
     def get_by_subject_id(self, subject_id: str) -> User | None: ...
 
     @abstractmethod
+    def get_by_username(self, username: str) -> User | None: ...
+
+    @abstractmethod
     def save(self, user: User) -> None: ...
 
 
@@ -59,6 +62,9 @@ class InMemoryUserRepository(UserRepository):
 
     def get_by_subject_id(self, subject_id: str) -> User | None:
         return next((u for u in self._users.values() if u.subject_id == subject_id), None)
+
+    def get_by_username(self, username: str) -> User | None:
+        return next((u for u in self._users.values() if u.username == username), None)
 
     def save(self, user: User) -> None:
         self._users[user.user_id] = user
@@ -92,6 +98,16 @@ class SqlAlchemyUserRepository(UserRepository):
             return None
         return self._to_domain(row)
 
+    def get_by_username(self, username: str) -> User | None:
+        row = (
+            self._session.query(UserModel)
+            .filter(UserModel.username == username)
+            .one_or_none()
+        )
+        if row is None:
+            return None
+        return self._to_domain(row)
+
     def save(self, user: User) -> None:
         row = (
             self._session.query(UserModel)
@@ -102,16 +118,28 @@ class SqlAlchemyUserRepository(UserRepository):
             row = UserModel(
                 user_id=user.user_id,
                 subject_id=user.subject_id,
+                username=user.username,
+                password_hash=user.password_hash,
                 tenant_id=user.tenant_id,
                 role=user.role,
                 status=user.status,
+                must_change_password=user.must_change_password,
+                password_change_reason=user.password_change_reason,
+                created_at=user.created_at,
+                last_login_at=user.last_login_at,
             )
             self._session.add(row)
         else:
             row.subject_id = user.subject_id
+            row.username = user.username
+            row.password_hash = user.password_hash
             row.tenant_id = user.tenant_id
             row.role = user.role
             row.status = user.status
+            row.must_change_password = user.must_change_password
+            row.password_change_reason = user.password_change_reason
+            row.created_at = user.created_at
+            row.last_login_at = user.last_login_at
 
         self._session.commit()
 
@@ -120,9 +148,15 @@ class SqlAlchemyUserRepository(UserRepository):
         return User(
             user_id=row.user_id,
             subject_id=row.subject_id,
+            username=row.username,
+            password_hash=row.password_hash,
             tenant_id=row.tenant_id,
             role=row.role,
             status=row.status,
+            must_change_password=row.must_change_password,
+            password_change_reason=row.password_change_reason,
+            created_at=row.created_at,
+            last_login_at=row.last_login_at,
         )
 
 

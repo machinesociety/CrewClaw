@@ -86,13 +86,13 @@ def _setup_admin_services():
     return repo, binding_repo, service
 
 
-def test_admin_permission_required_for_admin_routes(client):
+def test_admin_permission_required_for_admin_routes(client, issue_session_cookie):
     repo = _setup_admin_user_repo()
     client.app.dependency_overrides[get_sqlalchemy_user_repository] = lambda: repo
-    headers = {"X-Authentik-Subject": "authentik:user"}
 
     try:
-        resp = client.get("/api/v1/admin/users", headers=headers)
+        issue_session_cookie(client, user_id="u_user")
+        resp = client.get("/api/v1/admin/users")
         assert resp.status_code == status.HTTP_403_FORBIDDEN
         data = resp.json()
         assert data["code"] == "ACCESS_DENIED"
@@ -100,27 +100,27 @@ def test_admin_permission_required_for_admin_routes(client):
         client.app.dependency_overrides.pop(get_sqlalchemy_user_repository, None)
 
 
-def test_admin_can_list_and_get_user_detail(client):
+def test_admin_can_list_and_get_user_detail(client, issue_session_cookie):
     repo, binding_repo, service = _setup_admin_services()
     client.app.dependency_overrides[get_sqlalchemy_user_repository] = lambda: repo
     client.app.dependency_overrides[get_runtime_binding_repository] = lambda: binding_repo
     client.app.dependency_overrides[get_user_service] = lambda: service
 
-    headers = {"X-Authentik-Subject": "authentik:admin"}
     try:
-        resp = client.get("/api/v1/admin/users", headers=headers)
+        issue_session_cookie(client, user_id="u_admin")
+        resp = client.get("/api/v1/admin/users")
         assert resp.status_code == status.HTTP_200_OK
         users = resp.json()
         assert any(u["userId"] == "u_user" for u in users)
         assert any(u["runtimeObservedState"] == "running" for u in users if u["userId"] == "u_user")
 
-        detail = client.get("/api/v1/admin/users/u_user", headers=headers)
+        detail = client.get("/api/v1/admin/users/u_user")
         assert detail.status_code == status.HTTP_200_OK
         data = detail.json()
         assert data["userId"] == "u_user"
         assert data["status"] == "active"
 
-        runtime_resp = client.get("/api/v1/admin/users/u_user/runtime", headers=headers)
+        runtime_resp = client.get("/api/v1/admin/users/u_user/runtime")
         assert runtime_resp.status_code == status.HTTP_200_OK
         runtime = runtime_resp.json()
         assert runtime["runtimeId"] == "rt_u_user"
@@ -132,7 +132,7 @@ def test_admin_can_list_and_get_user_detail(client):
         client.app.dependency_overrides.clear()
 
 
-def test_admin_update_user_status_and_disabled_affects_frontend(client):
+def test_admin_update_user_status_and_disabled_affects_frontend(client, issue_session_cookie):
     repo = InMemoryUserRepository()
     repo.save(
         User(
@@ -173,19 +173,17 @@ def test_admin_update_user_status_and_disabled_affects_frontend(client):
     client.app.dependency_overrides[get_runtime_service] = lambda: _DummyRuntimeService()
 
     try:
-        admin_headers = {"X-Authentik-Subject": "authentik:admin"}
-        target_headers = {"X-Authentik-Subject": "authentik:target"}
-
+        issue_session_cookie(client, user_id="u_admin")
         resp = client.patch(
             "/api/v1/admin/users/u_target/status",
-            headers=admin_headers,
             json={"status": "disabled"},
         )
         assert resp.status_code == status.HTTP_200_OK
         data = resp.json()
         assert data["status"] == "disabled"
 
-        quota_resp = client.get("/api/v1/users/me/quota", headers=target_headers)
+        issue_session_cookie(client, user_id="u_target")
+        quota_resp = client.get("/api/v1/users/me/quota")
         assert quota_resp.status_code == status.HTTP_403_FORBIDDEN
         qdata = quota_resp.json()
         assert qdata["code"] == "USER_DISABLED"
@@ -193,7 +191,7 @@ def test_admin_update_user_status_and_disabled_affects_frontend(client):
         client.app.dependency_overrides.clear()
 
 
-def test_admin_can_manage_models_provider_credentials_and_usage(client):
+def test_admin_can_manage_models_provider_credentials_and_usage(client, issue_session_cookie):
     reset_inmemory_model_repositories()
     repo, binding_repo, service = _setup_admin_services()
     usage_repo = get_inmemory_usage_repository()
@@ -203,16 +201,15 @@ def test_admin_can_manage_models_provider_credentials_and_usage(client):
     client.app.dependency_overrides[get_runtime_binding_repository] = lambda: binding_repo
     client.app.dependency_overrides[get_user_service] = lambda: service
 
-    headers = {"X-Authentik-Subject": "authentik:admin"}
     try:
-        models_resp = client.get("/api/v1/admin/models", headers=headers)
+        issue_session_cookie(client, user_id="u_admin")
+        models_resp = client.get("/api/v1/admin/models")
         assert models_resp.status_code == status.HTTP_200_OK
         models = models_resp.json()["models"]
         assert any(model["modelId"] == "gpt-4-mini" for model in models)
 
         update_resp = client.put(
             "/api/v1/admin/models/gpt-4-mini",
-            headers=headers,
             json={
                 "enabled": True,
                 "userVisible": False,
@@ -227,7 +224,6 @@ def test_admin_can_manage_models_provider_credentials_and_usage(client):
 
         create_cred_resp = client.post(
             "/api/v1/admin/provider-credentials",
-            headers=headers,
             json={"provider": "openai", "name": "prod-openai", "secret": "sk-admin"},
         )
         assert create_cred_resp.status_code == status.HTTP_201_CREATED
@@ -236,21 +232,20 @@ def test_admin_can_manage_models_provider_credentials_and_usage(client):
         assert credential["provider"] == "openai"
         assert "secret" not in credential
 
-        list_cred_resp = client.get("/api/v1/admin/provider-credentials", headers=headers)
+        list_cred_resp = client.get("/api/v1/admin/provider-credentials")
         assert list_cred_resp.status_code == status.HTTP_200_OK
         credentials = list_cred_resp.json()["credentials"]
         assert any(item["credentialId"] == credential["credentialId"] for item in credentials)
 
         verify_resp = client.post(
             f"/api/v1/admin/provider-credentials/{credential['credentialId']}/verify",
-            headers=headers,
         )
         assert verify_resp.status_code == status.HTTP_200_OK
         verify = verify_resp.json()
         assert verify["verified"] is True
         assert verify["status"] == "active"
 
-        usage_resp = client.get("/api/v1/admin/usage/summary", headers=headers)
+        usage_resp = client.get("/api/v1/admin/usage/summary")
         assert usage_resp.status_code == status.HTTP_200_OK
         usage = usage_resp.json()
         assert usage["totalTokens"] == 123
@@ -258,7 +253,6 @@ def test_admin_can_manage_models_provider_credentials_and_usage(client):
 
         delete_resp = client.delete(
             f"/api/v1/admin/provider-credentials/{credential['credentialId']}",
-            headers=headers,
         )
         assert delete_resp.status_code == status.HTTP_204_NO_CONTENT
     finally:

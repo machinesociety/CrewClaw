@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "clawloops:contracts:baseline-v0.12-lightweight-auth:AuthMeResponse",
+  "title": "AuthMeResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["authenticated"],
+  "properties": {
+    "authenticated": { "type": "boolean" },
+    "user": {
+      "anyOf": [
+        { "$ref": "clawloops:contracts:baseline-v0.12-lightweight-auth:SessionUser" },
+        { "type": "null" }
+      ]
+    }
+  }
+}
+

@@ -20,6 +20,7 @@ import {
   LogOut,
   ChevronRight,
   Settings,
+  Home,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -47,6 +48,7 @@ const userNavItems: NavItem[] = [
 ];
 
 const adminNavItems: NavItem[] = [
+  { label: '管理首页', href: '/admin', icon: Home },
   { label: '用户管理', href: '/admin/users', icon: Users },
   { label: '邀请管理', href: '/admin/invitations', icon: Mail },
   { label: '模型治理', href: '/admin/models', icon: Cpu },
@@ -60,7 +62,11 @@ const adminNavItems: NavItem[] = [
 
 function NavLink({ item }: { item: NavItem }) {
   const [location] = useLocation();
-  const isActive = location === item.href || location.startsWith(item.href + '/');
+  // For /admin, only exact match to avoid highlighting on all /admin/* sub-pages
+  const isActive =
+    item.href === '/admin'
+      ? location === '/admin'
+      : location === item.href || location.startsWith(item.href + '/');
 
   return (
     <Link href={item.href}>

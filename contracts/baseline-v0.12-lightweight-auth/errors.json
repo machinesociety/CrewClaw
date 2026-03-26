@@ -1,0 +1,34 @@
+{
+  "baselineVersion": "v0.12-lightweight-auth",
+  "frozenAt": "2026-03-26",
+  "errors": [
+    { "http": 401, "code": "UNAUTHENTICATED", "scope": ["user", "admin", "internal"] },
+    { "http": 401, "code": "INVALID_CREDENTIALS", "scope": ["public", "user", "admin"] },
+    { "http": 403, "code": "ACCESS_DENIED", "scope": ["user", "admin", "internal"] },
+    { "http": 403, "code": "USER_DISABLED", "scope": ["user", "admin", "internal"] },
+    { "http": 403, "code": "PASSWORD_CHANGE_REQUIRED", "scope": ["user", "admin", "internal"] },
+    { "http": 404, "code": "USER_NOT_FOUND", "scope": ["admin", "internal"] },
+    { "http": 404, "code": "RUNTIME_NOT_FOUND", "scope": ["user", "admin", "internal"] },
+    { "http": 404, "code": "INVITATION_NOT_FOUND", "scope": ["public", "admin", "internal"] },
+    { "http": 404, "code": "MODEL_NOT_FOUND", "scope": ["user", "admin", "internal"] },
+    { "http": 409, "code": "RUNTIME_ACTION_CONFLICT", "scope": ["user", "admin", "internal"] },
+    { "http": 409, "code": "RUNTIME_CONTRACT_DRIFT", "scope": ["internal"] },
+    { "http": 409, "code": "INVITATION_ALREADY_CONSUMED", "scope": ["public", "admin", "internal"] },
+    { "http": 409, "code": "INVITATION_REVOKED", "scope": ["public", "admin", "internal"] },
+    { "http": 410, "code": "INVITATION_EXPIRED", "scope": ["public", "admin", "internal"] },
+    { "http": 422, "code": "INVITATION_USERNAME_MISMATCH", "scope": ["public", "internal"] },
+    { "http": 422, "code": "INVITATION_PASSWORD_INVALID", "scope": ["public", "internal"] },
+    { "http": 422, "code": "CURRENT_PASSWORD_INCORRECT", "scope": ["user", "admin"] },
+    { "http": 422, "code": "PASSWORD_CHANGE_INVALID", "scope": ["user", "admin"] },
+    { "http": 422, "code": "INVITATION_WORKSPACE_INVALID", "scope": ["internal"] },
+    { "http": 422, "code": "QUOTA_EXCEEDED", "scope": ["user", "admin"] },
+    { "http": 500, "code": "SESSION_ERROR", "scope": ["public", "user", "admin", "internal"] },
+    { "http": 500, "code": "INVITATION_ERROR", "scope": ["public", "internal"] },
+    { "http": 500, "code": "RUNTIME_STOP_FAILED", "scope": ["internal"] },
+    { "http": 500, "code": "RUNTIME_DELETE_FAILED", "scope": ["internal"] },
+    { "http": 500, "code": "INTERNAL_ERROR", "scope": ["user", "admin", "internal"] },
+    { "http": 502, "code": "USER_SYNC_ERROR", "scope": ["internal"] },
+    { "http": 502, "code": "RUNTIME_START_FAILED", "scope": ["internal"] }
+  ]
+}
+

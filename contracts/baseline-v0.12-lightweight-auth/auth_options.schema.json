@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "clawloops:contracts:baseline-v0.12-lightweight-auth:AuthOptionsResponse",
+  "title": "AuthOptionsResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["provider", "methods"],
+  "properties": {
+    "provider": { "type": "string", "enum": ["clawloops"] },
+    "methods": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "label"],
+        "properties": {
+          "type": { "type": "string", "enum": ["local_password"] },
+          "enabled": { "type": ["boolean", "null"] },
+          "label": { "type": "string" }
+        }
+      }
+    },
+    "passwordPolicy": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": [
+        "minLength",
+        "maxLength",
+        "requireLetter",
+        "requireNumber",
+        "disallowUsernameAsPassword"
+      ],
+      "properties": {
+        "minLength": { "type": "integer", "minimum": 1 },
+        "maxLength": { "type": "integer", "minimum": 1 },
+        "requireLetter": { "type": "boolean" },
+        "requireNumber": { "type": "boolean" },
+        "disallowUsernameAsPassword": { "type": "boolean" },
+        "disallowDefaultAdminPassword": { "type": ["boolean", "null"] }
+      }
+    },
+    "features": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "forcedPasswordChange": { "type": ["boolean", "null"] },
+        "passwordRecovery": { "type": ["boolean", "null"] },
+        "thirdPartyLogin": { "type": ["boolean", "null"] }
+      }
+    }
+  }
+}
+
