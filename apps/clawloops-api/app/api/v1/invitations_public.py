@@ -48,6 +48,17 @@ def _set_session_cookie(resp: Response, settings: AppSettings, token: str) -> No
 def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
+def _resolve_invitation_record(repo: InvitationRepository, token: str):
+    # Backward compatibility:
+    # admin UI currently shares /invite/{invitation_id} links (e.g. inv_xxx),
+    # while public endpoints historically expected raw token then hash lookup.
+    # Accept both formats to avoid breaking existing invites.
+    if token.startswith("inv_"):
+        record = repo.get_by_invitation_id(token)
+        if record is not None:
+            return record
+    return repo.get_by_token_hash(_hash_token(token))
+
 
 def _to_session_user(user: User) -> SessionUser:
     return SessionUser(
@@ -70,7 +81,7 @@ async def preview_invitation(
     token: str,
     repo: InvitationRepository = Depends(get_invitation_repository),
 ) -> InvitationPreviewResponse:
-    record = repo.get_by_token_hash(_hash_token(token))
+    record = _resolve_invitation_record(repo, token)
     if record is None:
         return InvitationPreviewResponse(valid=False, invitation=None)
 
@@ -105,7 +116,7 @@ async def accept_invitation(
     user_repo: UserRepository = Depends(get_sqlalchemy_user_repository),
     session_repo: SessionRepository = Depends(get_session_repository),
 ) -> InvitationAcceptResult:
-    record = repo.get_by_token_hash(_hash_token(token))
+    record = _resolve_invitation_record(repo, token)
     if record is None:
         raise InvitationNotFoundError()
 

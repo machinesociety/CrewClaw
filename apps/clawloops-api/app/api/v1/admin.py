@@ -1,13 +1,24 @@
+import hashlib
+import secrets
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from app.core.auth import AuthContext
 from app.core.dependencies import (
+    get_db_session_dep,
+    get_invitation_repository,
     get_runtime_service,
     get_user_service,
     require_active_user,
 )
-from app.core.errors import AccessDeniedError, UserNotFoundError
+from app.core.errors import AccessDeniedError, InvitationNotFoundError, UserNotFoundError
 from app.domain.users import UserStatus
+from app.models.invitation import InvitationModel
+from app.models.user import UserModel, UserRuntimeBindingModel
+from app.repositories.invitation_repository import InvitationRepository
 from app.repositories.model_repository import (
     ModelRepository,
     ProviderCredentialRepository,
@@ -38,6 +49,77 @@ from app.services.user_service import UserService
 router = APIRouter(tags=["admin"])
 
 
+class AdminHomeSummary(BaseModel):
+    totalUsers: int
+    activeUsers: int
+    disabledUsers: int
+    pendingInvitations: int
+    expiringInvitations24h: int
+    runningRuntimes: int
+    runtimeErrors: int
+
+
+class AdminHomePendingInvitation(BaseModel):
+    invitationId: str
+    targetEmail: str
+    loginUsername: str | None = None
+    workspaceId: str
+    role: str
+    expiresAt: str
+    status: str
+
+
+class AdminHomeRuntimeAlert(BaseModel):
+    userId: str
+    runtimeId: str
+    observedState: str
+    lastError: str | None = None
+    updatedAt: str | None = None
+
+
+class AdminHomeResponse(BaseModel):
+    summary: AdminHomeSummary
+    attention: dict
+
+
+class CreateAdminInvitationRequest(BaseModel):
+    targetEmail: str
+    loginUsername: str | None = None
+    workspaceId: str
+    role: str
+    expiresInHours: int = 72
+
+
+class AdminInvitationItem(BaseModel):
+    invitationId: str
+    targetEmail: str
+    loginUsername: str | None = None
+    workspaceId: str
+    role: str
+    status: str
+    expiresAt: str
+    consumedAt: str | None = None
+    consumedByUserId: str | None = None
+    lastError: str | None = None
+    createdAt: str | None = None
+
+
+def _to_admin_invitation_item(row: InvitationModel) -> AdminInvitationItem:
+    return AdminInvitationItem(
+        invitationId=row.invitation_id,
+        targetEmail=row.target_email,
+        loginUsername=row.login_username,
+        workspaceId=row.workspace_id,
+        role=row.role,
+        status=row.status,
+        expiresAt=row.expires_at.isoformat(),
+        consumedAt=row.consumed_at.isoformat() if row.consumed_at else None,
+        consumedByUserId=row.consumed_by_user_id,
+        lastError=None,
+        createdAt=None,
+    )
+
+
 def _require_admin(ctx: AuthContext = Depends(require_active_user)) -> AuthContext:
     if not ctx.isAdmin:
         raise AccessDeniedError()
@@ -56,6 +138,78 @@ def get_provider_credential_service(
 
 def get_usage_service(repo: UsageRepository = Depends(get_inmemory_usage_repository)) -> UsageService:
     return UsageService(usage_repo=repo)
+
+
+@router.get("/admin/home", response_model=AdminHomeResponse)
+async def get_admin_home(
+    _: AuthContext = Depends(_require_admin),
+    db: Session = Depends(get_db_session_dep),
+) -> AdminHomeResponse:
+    now = datetime.now(timezone.utc)
+    in_24h = now + timedelta(hours=24)
+
+    total_users = db.query(UserModel).count()
+    active_users = db.query(UserModel).filter(UserModel.status == "ACTIVE").count()
+    disabled_users = db.query(UserModel).filter(UserModel.status == "DISABLED").count()
+
+    pending_invitations_q = db.query(InvitationModel).filter(InvitationModel.status == "pending")
+    pending_invitations = pending_invitations_q.count()
+    expiring_24h = (
+        pending_invitations_q.filter(InvitationModel.expires_at <= in_24h.replace(tzinfo=None)).count()
+    )
+
+    running_runtimes = db.query(UserRuntimeBindingModel).filter(
+        UserRuntimeBindingModel.observed_state == "RUNNING"
+    ).count()
+    runtime_errors = db.query(UserRuntimeBindingModel).filter(
+        UserRuntimeBindingModel.observed_state == "ERROR"
+    ).count()
+
+    pending_rows = (
+        pending_invitations_q.order_by(InvitationModel.expires_at.asc()).limit(5).all()
+    )
+    runtime_error_rows = (
+        db.query(UserRuntimeBindingModel)
+        .filter(UserRuntimeBindingModel.observed_state == "ERROR")
+        .limit(5)
+        .all()
+    )
+
+    return AdminHomeResponse(
+        summary=AdminHomeSummary(
+            totalUsers=total_users,
+            activeUsers=active_users,
+            disabledUsers=disabled_users,
+            pendingInvitations=pending_invitations,
+            expiringInvitations24h=expiring_24h,
+            runningRuntimes=running_runtimes,
+            runtimeErrors=runtime_errors,
+        ),
+        attention={
+            "pendingInvitations": [
+                AdminHomePendingInvitation(
+                    invitationId=row.invitation_id,
+                    targetEmail=row.target_email,
+                    loginUsername=row.login_username,
+                    workspaceId=row.workspace_id,
+                    role=row.role,
+                    expiresAt=row.expires_at.isoformat(),
+                    status=row.status,
+                )
+                for row in pending_rows
+            ],
+            "runtimeAlerts": [
+                AdminHomeRuntimeAlert(
+                    userId=row.user_id,
+                    runtimeId=row.runtime_id,
+                    observedState=row.observed_state.value.lower(),
+                    lastError=row.last_error,
+                    updatedAt=None,
+                )
+                for row in runtime_error_rows
+            ],
+        },
+    )
 
 
 @router.get("/admin/users", response_model=list[AdminUserListItem])
@@ -267,5 +421,91 @@ async def get_admin_usage_summary(
         totalTokens=summary.total_tokens,
         usedTokens=summary.used_tokens,
     )
+
+
+@router.get("/admin/invitations")
+async def list_admin_invitations(
+    _: AuthContext = Depends(_require_admin),
+    db: Session = Depends(get_db_session_dep),
+) -> dict:
+    rows = db.query(InvitationModel).order_by(InvitationModel.expires_at.desc()).all()
+    return {"invitations": [_to_admin_invitation_item(row) for row in rows]}
+
+
+@router.get("/admin/invitations/{invitation_id}", response_model=AdminInvitationItem)
+async def get_admin_invitation(
+    invitation_id: str,
+    _: AuthContext = Depends(_require_admin),
+    db: Session = Depends(get_db_session_dep),
+) -> AdminInvitationItem:
+    row = (
+        db.query(InvitationModel)
+        .filter(InvitationModel.invitation_id == invitation_id)
+        .one_or_none()
+    )
+    if row is None:
+        raise InvitationNotFoundError()
+    return _to_admin_invitation_item(row)
+
+
+@router.post("/admin/invitations", response_model=AdminInvitationItem)
+async def create_admin_invitation(
+    body: CreateAdminInvitationRequest,
+    _: AuthContext = Depends(_require_admin),
+    db: Session = Depends(get_db_session_dep),
+) -> AdminInvitationItem:
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(hours=body.expiresInHours)
+    token = secrets.token_urlsafe(24)
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    invitation_id = f"inv_{secrets.token_hex(8)}"
+    target_email = body.targetEmail.strip() or f"{(body.loginUsername or 'user')}@noemail.local"
+    row = InvitationModel(
+        invitation_id=invitation_id,
+        invite_token_hash=token_hash,
+        target_email=target_email,
+        login_username=body.loginUsername,
+        workspace_id=body.workspaceId,
+        workspace_name=body.workspaceId,
+        role=body.role,
+        status="pending",
+        expires_at=expires_at.replace(tzinfo=None),
+        consumed_by_user_id=None,
+        consumed_at=None,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _to_admin_invitation_item(row)
+
+
+@router.post("/admin/invitations/{invitation_id}/revoke")
+async def revoke_admin_invitation(
+    invitation_id: str,
+    _: AuthContext = Depends(_require_admin),
+    db: Session = Depends(get_db_session_dep),
+) -> dict:
+    row = (
+        db.query(InvitationModel)
+        .filter(InvitationModel.invitation_id == invitation_id)
+        .one_or_none()
+    )
+    if row is None:
+        raise InvitationNotFoundError()
+    row.status = "revoked"
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/admin/invitations/{invitation_id}/resend")
+async def resend_admin_invitation(
+    invitation_id: str,
+    _: AuthContext = Depends(_require_admin),
+    repo: InvitationRepository = Depends(get_invitation_repository),
+) -> dict:
+    # MVP: currently no outbound mail service wired.
+    # Keep endpoint available for frontend interaction contract.
+    _ = repo
+    return {"ok": True, "invitationId": invitation_id}
 
 

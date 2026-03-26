@@ -42,6 +42,9 @@ class InvitationRepository(ABC):
     def get_by_token_hash(self, token_hash: str) -> InvitationRecord | None: ...
 
     @abstractmethod
+    def get_by_invitation_id(self, invitation_id: str) -> InvitationRecord | None: ...
+
+    @abstractmethod
     def consume_idempotent(
         self,
         *,
@@ -62,6 +65,16 @@ class SqlAlchemyInvitationRepository(InvitationRepository):
         row = (
             self._session.query(InvitationModel)
             .filter(InvitationModel.invite_token_hash == token_hash)
+            .one_or_none()
+        )
+        if row is None:
+            return None
+        return self._to_record(row)
+
+    def get_by_invitation_id(self, invitation_id: str) -> InvitationRecord | None:
+        row = (
+            self._session.query(InvitationModel)
+            .filter(InvitationModel.invitation_id == invitation_id)
             .one_or_none()
         )
         if row is None:
