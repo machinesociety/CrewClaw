@@ -84,6 +84,18 @@ services:
     networks:
       - clawloops_shared
 
+  # Image prewarm only: prepare runtime dependencies without
+  # including them in the default `docker compose up -d` flow.
+  prewarm-openclaw:
+    profiles:
+      - prewarm
+    image: "ghcr.io/openclaw/openclaw@sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02"
+
+  prewarm-litellm:
+    profiles:
+      - prewarm
+    image: "ghcr.io/berriai/litellm:v1.81.3-stable"
+
 networks:
   clawloops_shared:
     name: clawloops_shared
