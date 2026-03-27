@@ -12,6 +12,7 @@ from app.domain.runtime_ports import (
 )
 from app.schemas.runtime import DesiredState, ObservedState, RuntimeBindingSnapshot
 from app.services.runtime_config_renderer import RuntimeConfigRenderer
+from app.services.openclaw_url import build_openclaw_chat_url
 
 
 class RuntimeService:
@@ -84,7 +85,16 @@ class RuntimeService:
             internal_endpoint = resp.get("internalEndpoint")
             message = resp.get("message", "creating")
 
-            browser_url = resp.get("browserUrl") or f"https://{route_host}"
+            browser_url = resp.get("browserUrl")
+            gateway_token = (
+                openclaw_json.get("gateway", {})
+                .get("auth", {})
+                .get("token")
+            )
+            browser_url = build_openclaw_chat_url(
+                browser_url=browser_url,
+                gateway_token=str(gateway_token) if gateway_token is not None else None,
+            )
             self._binding_service.patch_binding_state(
                 user_id=user_id,
                 desired_state=DesiredState.running.value,

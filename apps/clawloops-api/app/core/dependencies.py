@@ -210,7 +210,7 @@ def get_runtime_service(
     runtime_manager_client = RuntimeManagerClient(base_url=base_url)
     runtime_manager_port = RuntimeManagerPortAdapter(runtime_manager_client)
 
-    renderer = RuntimeConfigRenderer()
+    renderer = RuntimeConfigRenderer(litellm_api_key=settings.litellm_api_key)
 
     return RuntimeService(
         binding_service=binding_port,

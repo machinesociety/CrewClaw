@@ -32,6 +32,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - CLAWLOOPS_ROUTE_HOST_SUFFIX=${CLAWLOOPS_DOMAIN}
+      - CLAWLOOPS_LITELLM_API_KEY=${LITELLM_MASTER_KEY:-sk-local-master}
     labels:
       - traefik.enable=true
       - traefik.http.routers.clawloops_api.rule=Host(`${CLAWLOOPS_DOMAIN}`) && PathPrefix(`/api`)

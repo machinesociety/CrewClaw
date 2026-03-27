@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends
 
-from app.core.dependencies import get_user_service, require_active_user
+from app.core.dependencies import get_app_settings, get_user_service, require_active_user
 from app.domain.users import DesiredState as DomainDesiredState, ObservedState as DomainObservedState
+from app.infra.runtime_manager_client import RuntimeManagerClient
 from app.schemas.runtime import (
     DesiredState as SchemaDesiredState,
     ObservedState as SchemaObservedState,
@@ -12,6 +13,7 @@ from app.schemas.runtime import (
     UserRuntimeBinding,
     UserRuntimeBindingResponse,
 )
+from app.services.openclaw_url import merge_with_existing_token
 from app.services.user_service import UserService
 
 
@@ -65,6 +67,7 @@ async def get_my_runtime_binding(
 async def get_my_runtime_status(
     ctx=Depends(require_active_user),
     user_service: UserService = Depends(get_user_service),
+    settings=Depends(get_app_settings),
 ) -> RuntimeStatusResponse:
     """
     查询当前用户 runtime 状态。
@@ -82,6 +85,37 @@ async def get_my_runtime_status(
             reason=RuntimeStatusReason.runtime_not_found,
             lastError=None,
         )
+
+    if binding is not None:
+        try:
+            rm_client = RuntimeManagerClient(settings.runtime_manager_base_url or "http://runtime-manager:18080")
+            container_fact = rm_client.get_container(binding.runtime_id)
+            fact_observed = container_fact.get("observedState")
+            fact_browser_url = merge_with_existing_token(
+                new_browser_url=container_fact.get("browserUrl"),
+                existing_browser_url=binding.browser_url,
+            )
+            if fact_observed and (
+                fact_observed != binding.observed_state.value.lower() or fact_browser_url != binding.browser_url
+            ):
+                mapped = {
+                    "creating": DomainObservedState.CREATING,
+                    "running": DomainObservedState.RUNNING,
+                    "stopped": DomainObservedState.STOPPED,
+                    "error": DomainObservedState.ERROR,
+                    "deleted": DomainObservedState.DELETED,
+                }
+                user_service.update_runtime_binding_state(
+                    user_id=ctx.userId,
+                    desired_state=binding.desired_state,
+                    observed_state=mapped.get(fact_observed, binding.observed_state),
+                    browser_url=fact_browser_url,
+                    internal_endpoint=binding.internal_endpoint,
+                    last_error=binding.last_error,
+                )
+                binding = user_service.get_runtime_binding(ctx.userId) or binding
+        except Exception:
+            pass
 
     ready = binding.observed_state == DomainObservedState.RUNNING and bool(binding.browser_url)
 

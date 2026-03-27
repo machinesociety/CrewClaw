@@ -12,7 +12,8 @@ import httpx
 class RuntimeManagerClient:
     def __init__(self, base_url: str) -> None:
         self._base_url = base_url.rstrip("/")
-        self._timeout = httpx.Timeout(10.0, connect=5.0)
+        # RM ensure-running can block until readiness window completes.
+        self._timeout = httpx.Timeout(45.0, connect=5.0)
 
     def _request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         with httpx.Client(base_url=self._base_url, timeout=self._timeout) as client:

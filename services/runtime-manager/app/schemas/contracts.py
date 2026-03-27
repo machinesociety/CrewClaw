@@ -52,6 +52,7 @@ class ContainerStateResponse(BaseModel):
     runtimeId: str
     observedState: ObservedState
     internalEndpoint: str | None = None
+    browserUrl: str | None = None
     message: str | None = None
 
 

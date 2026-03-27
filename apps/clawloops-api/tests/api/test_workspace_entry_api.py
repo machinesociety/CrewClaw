@@ -146,3 +146,33 @@ def test_workspace_entry_disabled_user_returns_403(client):
     finally:
         client.app.dependency_overrides.pop(get_sqlalchemy_user_repository, None)
 
+
+def test_workspace_entry_redirect_ready_runtime(client_with_inmemory):
+    client = client_with_inmemory
+    subject = "authentik:ws-redirect"
+    user_id = _sync_user(client, subject)
+
+    resp_ensure = client.post(f"/internal/users/{user_id}/runtime-binding/ensure")
+    assert resp_ensure.status_code == status.HTTP_200_OK
+
+    ready_url = "http://127.0.0.1:18789/chat?session=main#token=user2-token"
+    resp_update_running = client.patch(
+        f"/internal/users/{user_id}/runtime-binding/state",
+        json={
+            "desiredState": DomainDesiredState.RUNNING.value,
+            "observedState": DomainObservedState.RUNNING.value,
+            "browserUrl": ready_url,
+            "internalEndpoint": "http://clawloops-u001:3000",
+            "lastError": None,
+        },
+    )
+    assert resp_update_running.status_code == status.HTTP_200_OK
+
+    resp = client.get(
+        "/api/v1/workspace-entry/redirect",
+        headers=_auth_headers(subject),
+        follow_redirects=False,
+    )
+    assert resp.status_code == status.HTTP_307_TEMPORARY_REDIRECT
+    assert resp.headers["location"] == ready_url
+

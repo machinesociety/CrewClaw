@@ -28,6 +28,7 @@ class AppSettings(BaseSettings):
     runtime_manager_base_url: str | None = None
     route_host_suffix: str = "clawloops.localhost"
     model_gateway_base_url: str | None = None
+    litellm_api_key: str = "sk-local-master"
 
     class Config:
         env_prefix = "CLAWLOOPS_"

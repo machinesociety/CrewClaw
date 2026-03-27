@@ -8,6 +8,8 @@ class RuntimeConfigRenderer:
     """
     负责渲染 RuntimeManager V2.2 所需的完整 openclaw.json。
     """
+    def __init__(self, litellm_api_key: str = "not_empty") -> None:
+        self._litellm_api_key = litellm_api_key
 
     def render(
         self,
@@ -31,6 +33,13 @@ class RuntimeConfigRenderer:
                 "bind": "lan",
                 "port": 18789,
                 "mode": "local",
+                "controlUi": {
+                    "allowedOrigins": ["*"],
+                    "dangerouslyAllowHostHeaderOriginFallback": True,
+                    "allowInsecureAuth": True,
+                    # Keep token-only auth path and disable device pairing prompt.
+                    "dangerouslyDisableDeviceAuth": True,
+                },
                 "auth": {
                     "mode": "token",
                     # V2.2 中 token 由后端渲染结果下发；此处先以可替换引用占位。
@@ -41,7 +50,7 @@ class RuntimeConfigRenderer:
                 "providers": {
                     "litellm": {
                         "baseUrl": model_config.base_url,
-                        "apiKey": "not_empty",
+                        "apiKey": self._litellm_api_key,
                         "api": "openai-completions",
                         "models": [
                             {
@@ -58,10 +67,6 @@ class RuntimeConfigRenderer:
                     }
                 },
                 "mode": "merge",
-            },
-            "runtime": {
-                "runtimeId": binding.runtimeId,
-                "userId": user_id,
             },
             "agents": {
                 "defaults": {

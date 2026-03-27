@@ -12,3 +12,4 @@ AUTHENTIK_Implementation_Guide.md
 docs/
 __pycache__/
 .cursor/
+docker_test/

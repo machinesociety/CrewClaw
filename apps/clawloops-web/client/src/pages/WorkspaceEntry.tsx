@@ -104,7 +104,7 @@ function WorkspaceEntryContent() {
 
       if (data.ready && data.browserUrl) {
         setPageState('readyToRedirect');
-        window.location.href = data.browserUrl;
+        window.location.href = '/api/v1/workspace-entry/redirect';
         return true;
       }
 
@@ -195,7 +195,7 @@ function WorkspaceEntryContent() {
             <p className="font-semibold text-foreground mb-1">工作区已就绪</p>
             <p className="text-muted-foreground text-sm mb-4">正在跳转到您的工作区...</p>
             {entry?.browserUrl && (
-              <a href={entry.browserUrl} className="inline-flex items-center gap-1.5 text-xs text-primary hover:text-primary/80">
+              <a href="/api/v1/workspace-entry/redirect" className="inline-flex items-center gap-1.5 text-xs text-primary hover:text-primary/80">
                 <ExternalLink className="w-3.5 h-3.5" />
                 手动跳转
               </a>

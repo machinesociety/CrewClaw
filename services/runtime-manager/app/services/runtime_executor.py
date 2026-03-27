@@ -28,6 +28,17 @@ class RuntimeExecutor:
     def _internal_endpoint(self, runtime_id: str) -> str:
         return f"http://rt-{runtime_id}:18789"
 
+    def _browser_url_from_container(self, container) -> str | None:
+        container.reload()
+        ports = container.attrs.get("NetworkSettings", {}).get("Ports", {}) or {}
+        bindings = ports.get("18789/tcp")
+        if not bindings:
+            return None
+        host_port = bindings[0].get("HostPort")
+        if not host_port:
+            return None
+        return f"http://localhost:{host_port}"
+
     def _list_managed(self, runtime_id: str):
         return self._docker.containers.list(
             all=True,
@@ -63,6 +74,31 @@ class RuntimeExecutor:
             time.sleep(self._settings.runtime_startup_poll_seconds)
         return False
 
+    def _create_runtime_container(self, req: EnsureContainerRequest, labels: dict[str, str], alias: str):
+        container = self._docker.containers.create(
+            image=self._settings.runtime_openclaw_image_ref,
+            command=self._settings.runtime_openclaw_command.split(" "),
+            labels=labels,
+            environment={
+                "HOME": "/home/node",
+                "TERM": "xterm-256color",
+                "TZ": "UTC",
+                "OPENAI_BASE_URL": "http://litellm:4000",
+            },
+            volumes={
+                req.compat.openclawConfigDir: {"bind": "/home/node/.openclaw", "mode": "rw"},
+                req.compat.openclawWorkspaceDir: {
+                    "bind": "/home/node/.openclaw/workspace",
+                    "mode": "rw",
+                },
+            },
+            ports={"18789/tcp": None},
+        )
+        network = self._docker.networks.get(self._settings.runtime_openclaw_network)
+        network.connect(container, aliases=[alias])
+        container.start()
+        return container
+
     def ensure_running(self, req: EnsureContainerRequest) -> ContainerStateResponse:
         try:
             prepare_runtime_dirs(req.compat.openclawConfigDir, req.compat.openclawWorkspaceDir)
@@ -97,10 +133,34 @@ class RuntimeExecutor:
                             500,
                         )
                 endpoint = self._internal_endpoint(req.runtimeId)
+                browser_url = self._browser_url_from_container(existing)
+                # Legacy runtimes created before host-port mapping rollout are auto-migrated once.
+                if browser_url is None:
+                    existing.remove(force=True)
+                    labels = {
+                        "clawloops.managed": "true",
+                        "clawloops.userId": req.userId,
+                        "clawloops.runtimeId": req.runtimeId,
+                        "clawloops.volumeId": req.volumeId,
+                        "clawloops.routeHost": req.routeHost,
+                        "clawloops.retentionPolicy": req.retentionPolicy,
+                        "clawloops.configVersion": req.renderedConfig.configVersion,
+                    }
+                    alias = f"rt-{req.runtimeId}"
+                    migrated = self._create_runtime_container(req, labels, alias)
+                    ip = container_ip(migrated)
+                    if not ip or not self._wait_ready(ip, 18789):
+                        raise RuntimeManagerError(
+                            "RUNTIME_START_FAILED",
+                            "failed to prepare config or start container",
+                            500,
+                        )
+                    browser_url = self._browser_url_from_container(migrated)
                 return ContainerStateResponse(
                     runtimeId=req.runtimeId,
                     observedState="running" if existing.status == "running" else "creating",
                     internalEndpoint=endpoint,
+                    browserUrl=browser_url,
                     message="already running" if existing.status == "running" else "creating",
                 )
 
@@ -114,27 +174,7 @@ class RuntimeExecutor:
                 "clawloops.configVersion": req.renderedConfig.configVersion,
             }
             alias = f"rt-{req.runtimeId}"
-            container = self._docker.containers.create(
-                image=self._settings.runtime_openclaw_image_ref,
-                command=self._settings.runtime_openclaw_command.split(" "),
-                labels=labels,
-                environment={
-                    "HOME": "/home/node",
-                    "TERM": "xterm-256color",
-                    "TZ": "UTC",
-                    "OPENAI_BASE_URL": "http://litellm:4000",
-                },
-                volumes={
-                    req.compat.openclawConfigDir: {"bind": "/home/node/.openclaw", "mode": "rw"},
-                    req.compat.openclawWorkspaceDir: {
-                        "bind": "/home/node/.openclaw/workspace",
-                        "mode": "rw",
-                    },
-                },
-            )
-            network = self._docker.networks.get(self._settings.runtime_openclaw_network)
-            network.connect(container, aliases=[alias])
-            container.start()
+            container = self._create_runtime_container(req, labels, alias)
             container.reload()
             if container.status != "running":
                 raise RuntimeManagerError("RUNTIME_START_FAILED", "container is not running", 500)
@@ -146,10 +186,12 @@ class RuntimeExecutor:
                     "failed to prepare config or start container",
                     500,
                 )
+            browser_url = self._browser_url_from_container(container)
             return ContainerStateResponse(
                 runtimeId=req.runtimeId,
                 observedState="running",
                 internalEndpoint=self._internal_endpoint(req.runtimeId),
+                browserUrl=browser_url,
                 message="creating",
             )
         except RuntimeManagerError:
@@ -225,5 +267,6 @@ class RuntimeExecutor:
             runtimeId=runtime_id,
             observedState=observed,  # type: ignore[arg-type]
             internalEndpoint=self._internal_endpoint(runtime_id) if observed != "deleted" else None,
+            browserUrl=self._browser_url_from_container(container) if observed != "deleted" else None,
             message="ok",
         )
