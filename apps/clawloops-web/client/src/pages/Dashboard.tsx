@@ -621,7 +621,7 @@ function DashboardContent() {
     try {
       const entry = await workspaceApi.entry();
       if (entry.ready && entry.browserUrl) {
-        window.location.href = entry.browserUrl;
+        window.open(entry.browserUrl, '_blank');
       } else {
         navigate('/workspace-entry');
       }
