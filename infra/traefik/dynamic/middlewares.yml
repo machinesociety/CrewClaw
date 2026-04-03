@@ -1,31 +1,31 @@
 http:
   routers:
     clawloops_web:
-      rule: "Host(`clawloops.192.168.0.96.nip.io`) || Host(`192.168.0.96`)"
+      rule: "Host(`clawloops.192.168.0.103.nip.io`) || Host(`192.168.0.103`)"
       entryPoints:
         - web
       service: clawloops_web
 
     clawloops_api:
-      rule: "(Host(`clawloops.192.168.0.96.nip.io`) || Host(`192.168.0.96`)) && PathPrefix(`/api`)"
+      rule: "(Host(`clawloops.192.168.0.103.nip.io`) || Host(`192.168.0.103`)) && PathPrefix(`/api`)"
       entryPoints:
         - web
       service: clawloops_api
 
     clawloops_healthz:
-      rule: "(Host(`clawloops.192.168.0.96.nip.io`) || Host(`192.168.0.96`)) && Path(`/healthz`)"
+      rule: "(Host(`clawloops.192.168.0.103.nip.io`) || Host(`192.168.0.103`)) && Path(`/healthz`)"
       entryPoints:
         - web
       service: clawloops_api
 
     clawloops_public:
-      rule: "(Host(`clawloops.192.168.0.96.nip.io`) || Host(`192.168.0.96`)) && PathPrefix(`/public`)"
+      rule: "(Host(`clawloops.192.168.0.103.nip.io`) || Host(`192.168.0.103`)) && PathPrefix(`/public`)"
       entryPoints:
         - web
       service: clawloops_api
 
     runtime_manager:
-      rule: "Host(`runtime-manager.192.168.0.96.nip.io`)"
+      rule: "Host(`runtime-manager.192.168.0.103.nip.io`)"
       entryPoints:
         - web
       service: runtime_manager
