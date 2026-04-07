@@ -64,7 +64,19 @@ class RuntimeConfigRenderer:
                             }
                             for model_id in model_config.models
                         ],
-                    }
+                    },
+                    "groq": {"baseUrl": "http://127.0.0.1", "models": []},
+                    "huggingface": {"baseUrl": "http://127.0.0.1", "models": []},
+                    "openai": {"baseUrl": "http://127.0.0.1", "models": []},
+                    "anthropic": {"baseUrl": "http://127.0.0.1", "models": []},
+                    "google": {"baseUrl": "http://127.0.0.1", "models": []},
+                    "github": {"baseUrl": "http://127.0.0.1", "models": []},
+                    "zhipu": {"baseUrl": "http://127.0.0.1", "models": []},
+                    "moonshot": {"baseUrl": "http://127.0.0.1", "models": []},
+                    "minimax": {"baseUrl": "http://127.0.0.1", "models": []},
+                    "ollama": {"baseUrl": "http://127.0.0.1", "models": []},
+                    "qwen": {"baseUrl": "http://127.0.0.1", "models": []},
+                    "kimi-coding": {"baseUrl": "http://127.0.0.1", "models": []},
                 },
                 "mode": "replace",
             },
