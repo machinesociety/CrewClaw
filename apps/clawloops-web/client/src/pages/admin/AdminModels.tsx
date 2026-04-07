@@ -167,10 +167,10 @@ function AdminModelsContent() {
                     </TableCell>
                     <TableCell>
                       <Switch
-                        checked={model.visible ?? false}
+                        checked={model.userVisible ?? false}
                         disabled={updatingId === model.modelId}
                         onCheckedChange={(checked) =>
-                          handleUpdate(model.modelId, { visible: checked })
+                          handleUpdate(model.modelId, { userVisible: checked })
                         }
                       />
                     </TableCell>

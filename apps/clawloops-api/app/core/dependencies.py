@@ -197,7 +197,7 @@ def get_runtime_service(
 
         from app.infra.model_gateway_client import ModelGatewayClient
 
-        client = ModelGatewayClient(model_base_url)
+        client = ModelGatewayClient(model_base_url, api_key=settings.litellm_api_key)
         payload = client.get_user_model_config(user_id=user_id, preferred_models=preferred_models)
         return ModelConfigResponse(**payload)
 
@@ -221,4 +221,3 @@ def get_runtime_service(
         config_renderer=renderer,
         route_host_suffix=settings.route_host_suffix,
     )
-

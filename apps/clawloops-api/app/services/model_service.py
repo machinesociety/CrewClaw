@@ -8,7 +8,7 @@ from app.core.errors import (
     ProviderCredentialNotFoundError,
 )
 from app.domain.credentials import ProviderCredential, ProviderCredentialStatus
-from app.domain.models import Model, UsageSummary
+from app.domain.models import Model, ModelSource, UsageSummary
 from app.repositories.model_repository import (
     ModelRepository,
     ProviderCredentialRepository,
@@ -49,7 +49,16 @@ class ModelService:
     ) -> Model:
         model = self._model_repo.get_model(model_id)
         if model is None:
-            raise ModelNotFoundError()
+            model = Model(
+                model_id=model_id,
+                name=model_id,
+                provider="litellm",
+                source=ModelSource.SHARED,
+                enabled=True,
+                user_visible=True,
+                default_route=f"litellm/{model_id}",
+                default_provider_credential_id=None,
+            )
 
         if enabled is not None:
             model.enabled = enabled
@@ -125,4 +134,3 @@ class UsageService:
             total_tokens=sum(item.total_tokens for item in summaries),
             used_tokens=sum(item.used_tokens for item in summaries),
         )
-

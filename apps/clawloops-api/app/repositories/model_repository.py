@@ -44,18 +44,7 @@ class UsageRepository(Protocol):
 
 class InMemoryModelRepository:
     def __init__(self) -> None:
-        self._models: dict[str, Model] = {
-            "gpt-4-mini": Model(
-                model_id="gpt-4-mini",
-                name="GPT-4 Mini",
-                provider="openai",
-                source=ModelSource.SHARED,
-                enabled=True,
-                user_visible=True,
-                default_route="openai/gpt-4-mini",
-                default_provider_credential_id=None,
-            )
-        }
+        self._models: dict[str, Model] = {}
 
     def list_models(self) -> list[Model]:
         return list(self._models.values())
@@ -133,5 +122,4 @@ def reset_inmemory_model_repositories() -> None:
     _model_repo_singleton = None
     _provider_credential_repo_singleton = None
     _usage_repo_singleton = None
-
 

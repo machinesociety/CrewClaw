@@ -230,9 +230,12 @@ export interface Model {
   name: string;
   provider?: string;
   enabled?: boolean;
-  visible?: boolean;
+  userVisible?: boolean;
   isDefault?: boolean;
   policy?: Record<string, unknown>;
+  defaultRoute?: string;
+  source?: string;
+  defaultProviderCredentialId?: string;
 }
 
 // Admin - Users
