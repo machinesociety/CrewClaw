@@ -1,8 +1,8 @@
-# CrewClaw
+# ClawLoops
 
 English | [中文](README_zh-CN.md) | [한국어](README_ko-KR.md) | [日本語](README_ja-JP.md) | [Español](README_es-ES.md) | [Português](README_pt-BR.md)
 
-CrewClaw is a team-oriented control plane for OpenClaw workspaces, managing users, workspaces, models, and runtimes.
+ClawLoops is a team-oriented control plane for OpenClaw workspaces, managing users, workspaces, models, and runtimes.
 
 It helps teams provision, access, and manage isolated OpenClaw runtimes per user, while keeping browser ingress, control-plane logic, runtime orchestration, and model access clearly separated.
 
@@ -23,7 +23,7 @@ It helps teams provision, access, and manage isolated OpenClaw runtimes per user
 
 ## 🗺️ Architecture Overview
 
-CrewClaw follows a boundary-first design: browser ingress, access control, control-plane logic, runtime orchestration, per-user runtimes, and model access stay clearly separated for team governance, security isolation, and future scaling.
+ClawLoops follows a boundary-first design: browser ingress, access control, control-plane logic, runtime orchestration, per-user runtimes, and model access stay clearly separated for team governance, security isolation, and future scaling.
 
 ```mermaid
 flowchart TB
@@ -207,7 +207,7 @@ Please ensure Docker Engine and Docker Compose are installed on your system, and
 
 > **Deployment Wizard**: Whether you're on Windows, macOS, or Linux, we've got you covered with one-click startup scripts.
 >
-> For detailed environment configuration and launch steps, please refer to: [infra/compose Deployment Guide](CrewClaw/infra/compose)
+> For detailed environment configuration and launch steps, please refer to: [infra/compose Deployment Guide](ClawLoops/infra/compose)
 
 ## Runtime and Model Access
 
@@ -218,7 +218,7 @@ Please ensure Docker Engine and Docker Compose are installed on your system, and
 
 ## 🤝 Contributing
 
-CrewClaw grows with community support and co-building. Whether you found a bug, have a great feature idea, or want to improve the docs, you are welcome to join.
+ClawLoops grows with community support and co-building. Whether you found a bug, have a great feature idea, or want to improve the docs, you are welcome to join.
 
 You can contribute in a few simple steps:
 
@@ -234,4 +234,4 @@ We look forward to seeing your ideas and code!
 
 This project is licensed under the Apache License, Version 2.0.
 
-See [LICENSE](file:///home/neme2080d/Workspace/MasRobo/CrewClaw/LICENSE) for details.
+See [LICENSE](file:///home/neme2080d/Workspace/MasRobo/ClawLoops/LICENSE) for details.
