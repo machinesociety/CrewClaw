@@ -56,6 +56,12 @@ class RuntimeService:
         创建或启动 runtime，并回写 binding 状态。
         """
         binding = self._binding_service.ensure_binding(user_id)
+        
+        active_tasks = self._task_repo.get_active_tasks_for_user(user_id, binding.runtimeId)
+        if active_tasks:
+            task = active_tasks[0]
+            raise RuntimeError(f"已有{task.action.value}任务正在进行中，请稍后再试")
+        
         task = self._new_task(user_id, binding.runtimeId, RuntimeAction.ENSURE_RUNNING)
         task.start()
         self._task_repo.save(task)
@@ -126,6 +132,12 @@ class RuntimeService:
         幂等停止 runtime。
         """
         binding = self._binding_service.ensure_binding(user_id)
+        
+        active_tasks = self._task_repo.get_active_tasks_for_user(user_id, binding.runtimeId)
+        if active_tasks:
+            task = active_tasks[0]
+            raise RuntimeError(f"已有{task.action.value}任务正在进行中，请稍后再试")
+            
         task = self._new_task(user_id, binding.runtimeId, RuntimeAction.STOP)
         task.start()
         self._task_repo.save(task)
@@ -163,6 +175,12 @@ class RuntimeService:
         删除 runtime，并按 retentionPolicy 更新 binding。
         """
         binding = self._binding_service.ensure_binding(user_id)
+        
+        active_tasks = self._task_repo.get_active_tasks_for_user(user_id, binding.runtimeId)
+        if active_tasks:
+            task = active_tasks[0]
+            raise RuntimeError(f"已有{task.action.value}任务正在进行中，请稍后再试")
+            
         effective_policy = retention_policy or binding.retentionPolicy.value
         task = self._new_task(user_id, binding.runtimeId, RuntimeAction.DELETE)
         task.start()
@@ -216,6 +234,15 @@ class InMemoryRuntimeTaskRepository(RuntimeTaskRepository):
 
     def get(self, task_id: str) -> RuntimeTask | None:
         return self._tasks.get(task_id)
+        
+    def get_active_tasks_for_user(self, user_id: str, runtime_id: str) -> list[RuntimeTask]:
+        from app.domain.runtime import TaskStatus
+        return [
+            task for task in self._tasks.values()
+            if task.user_id == user_id 
+            and task.runtime_id == runtime_id 
+            and task.status in [TaskStatus.PENDING, TaskStatus.RUNNING]
+        ]
 
 
 class UserRuntimeBindingServiceAdapter(UserRuntimeBindingServicePort):

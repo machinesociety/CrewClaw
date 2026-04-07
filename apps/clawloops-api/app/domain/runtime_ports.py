@@ -89,4 +89,7 @@ class RuntimeTaskRepository(Protocol):
 
     def get(self, task_id: str) -> RuntimeTask | None:
         ...
+        
+    def get_active_tasks_for_user(self, user_id: str, runtime_id: str) -> list[RuntimeTask]:
+        ...
 

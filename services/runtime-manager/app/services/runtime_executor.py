@@ -138,54 +138,64 @@ class RuntimeExecutor:
                     .get("IPAddress", "")
                 )
 
-            # 清理现有的容器，避免冲突
+            # 检查是否存在现有容器
             existing_containers = self._list_managed(req.runtimeId)
+            container = None
+            
             if existing_containers:
-                logger.info(f"Found {len(existing_containers)} existing containers for runtime {req.runtimeId}, removing them")
-                for container in existing_containers:
+                container = existing_containers[0]
+                container.reload()
+                logger.info(f"Found existing container: {container.id}, status: {container.status}")
+                
+                # 如果容器已停止，直接启动它
+                if container.status in {"exited", "created"}:
+                    logger.info("Starting existing stopped container")
+                    container.start()
+                    container.reload()
+                    
+                    if container.status != "running":
+                        logger.error(f"Failed to start existing container, status: {container.status}")
+                        raise RuntimeManagerError("RUNTIME_START_FAILED", "failed to start existing container", 500)
+                elif container.status == "running":
+                    logger.info("Container is already running")
+                else:
+                    # 如果容器处于其他状态（如 restarting, paused, dead），删除并重建
+                    logger.info(f"Container in unexpected state: {container.status}, removing and recreating")
+                    container.remove(force=True)
+                    container = None
+            
+            # 如果没有现有容器或已删除，则创建新容器
+            if container is None:
+                logger.info("Creating new container")
+                labels = {
+                    "clawloops.managed": "true",
+                    "clawloops.userId": req.userId,
+                    "clawloops.runtimeId": req.runtimeId,
+                    "clawloops.volumeId": req.volumeId,
+                    "clawloops.routeHost": req.routeHost,
+                    "clawloops.retentionPolicy": req.retentionPolicy,
+                    "clawloops.configVersion": req.renderedConfig.configVersion,
+                }
+                alias = f"rt-{req.runtimeId}"
+                container = self._create_runtime_container(req, labels, alias)
+                container.reload()
+                logger.info(f"Created container with status: {container.status}")
+                
+                if container.status != "running":
+                    logger.error(f"Container is not running, status: {container.status}")
+                    # 清理失败的容器
                     try:
                         container.remove(force=True)
-                        logger.info(f"Removed existing container: {container.id}")
+                        logger.info(f"Removed failed container: {container.id}")
                     except Exception as e:
-                        logger.error(f"Failed to remove container {container.id}: {e}")
-
-            # 创建新容器
-            logger.info("Creating new container")
-            labels = {
-                "clawloops.managed": "true",
-                "clawloops.userId": req.userId,
-                "clawloops.runtimeId": req.runtimeId,
-                "clawloops.volumeId": req.volumeId,
-                "clawloops.routeHost": req.routeHost,
-                "clawloops.retentionPolicy": req.retentionPolicy,
-                "clawloops.configVersion": req.renderedConfig.configVersion,
-            }
-            alias = f"rt-{req.runtimeId}"
-            container = self._create_runtime_container(req, labels, alias)
-            container.reload()
-            logger.info(f"Created container with status: {container.status}")
-            
-            if container.status != "running":
-                logger.error(f"Container is not running, status: {container.status}")
-                # 清理失败的容器
-                try:
-                    container.remove(force=True)
-                    logger.info(f"Removed failed container: {container.id}")
-                except Exception as e:
-                    logger.error(f"Failed to remove failed container {container.id}: {e}")
-                raise RuntimeManagerError("RUNTIME_START_FAILED", "container is not running", 500)
+                        logger.error(f"Failed to remove failed container {container.id}: {e}")
+                    raise RuntimeManagerError("RUNTIME_START_FAILED", "container is not running", 500)
 
             ip = container_ip(container)
-            logger.info(f"New container IP: {ip}")
+            logger.info(f"Container IP: {ip}")
             
             if not ip or not self._wait_ready(ip, 18789):
-                logger.error("Failed to wait for new container to be ready")
-                # 清理失败的容器
-                try:
-                    container.remove(force=True)
-                    logger.info(f"Removed failed container: {container.id}")
-                except Exception as e:
-                    logger.error(f"Failed to remove failed container {container.id}: {e}")
+                logger.error("Failed to wait for container to be ready")
                 raise RuntimeManagerError(
                     "RUNTIME_START_FAILED",
                     "failed to prepare config or start container",
@@ -193,7 +203,7 @@ class RuntimeExecutor:
                 )
             
             browser_url = self._browser_url_from_container(container)
-            logger.info(f"New container browser URL: {browser_url}")
+            logger.info(f"Container browser URL: {browser_url}")
             
             return ContainerStateResponse(
                 runtimeId=req.runtimeId,
