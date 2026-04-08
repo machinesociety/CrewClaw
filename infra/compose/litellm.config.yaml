@@ -4,6 +4,18 @@ model_list:
       model: dashscope/qwen3.5-plus
       api_key: os.environ/DASHSCOPE_API_KEY
       api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+  - model_name: ollama-qwen2.5-7b
+    litellm_params:
+      model: ollama/qwen2.5:7b
+      api_base: os.environ/OLLAMA_BASE_URL
+  - model_name: ollama-llama3.1-8b
+    litellm_params:
+      model: ollama/llama3.1:8b
+      api_base: os.environ/OLLAMA_BASE_URL
+  - model_name: openrouter-gpt-4o-mini
+    litellm_params:
+      model: openrouter/openai/gpt-4o-mini
+      api_key: os.environ/OPENROUTER_API_KEY
 
 litellm_settings:
   drop_params: true
