@@ -49,6 +49,7 @@ import ForcePasswordChangePage from './pages/ForcePasswordChange';
 // User pages
 import DashboardPage from './pages/Dashboard';
 import WorkspaceEntryPage from './pages/WorkspaceEntry';
+import FileBrowserPage from './pages/FileBrowser';
 
 // Admin pages
 import AdminHomePage from './pages/admin/AdminHome';
@@ -82,6 +83,7 @@ function Router() {
       {/* User routes */}
       <Route path="/app" component={DashboardPage} />
       <Route path="/workspace-entry" component={WorkspaceEntryPage} />
+      <Route path="/file-browser" component={FileBrowserPage} />
 
       {/* Admin routes */}
       <Route path="/admin" component={AdminHomePage} />

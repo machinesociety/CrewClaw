@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1 import admin as admin_api
 from app.api.v1 import auth as auth_api
+from app.api.v1 import files as files_api
 from app.api.v1 import invitations_public as invitations_public_api
 from app.api.v1 import internal as internal_api
 from app.api.v1 import models as models_api
@@ -54,6 +55,7 @@ def create_app() -> FastAPI:
     app.include_router(models_api.router, prefix="/api/v1")
     app.include_router(usage_api.router, prefix="/api/v1")
     app.include_router(workspace_api.router, prefix="/api/v1")
+    app.include_router(files_api.router, prefix="/api/v1")
     app.include_router(admin_api.router, prefix="/api/v1")
     app.include_router(internal_api.router)
 

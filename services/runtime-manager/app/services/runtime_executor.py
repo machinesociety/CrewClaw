@@ -280,3 +280,145 @@ class RuntimeExecutor:
             browserUrl=self._browser_url_from_container(container) if observed != "deleted" else None,
             message="ok",
         )
+
+    def _get_container_by_id(self, container_id: str):
+        try:
+            return self._docker.containers.get(container_id)
+        except NotFound:
+            raise RuntimeManagerError(
+                "CONTAINER_NOT_FOUND",
+                f"container not found: {container_id}",
+                404,
+            )
+
+    def list_files(self, container_id: str, path: str) -> list[dict]:
+        """
+        列出容器内的文件
+        """
+        try:
+            container = self._get_container_by_id(container_id)
+            
+            # 使用 ls -la 命令列出文件
+            cmd = ['ls', '-la', path]
+            result = container.exec_run(cmd, user='node')
+            
+            if result.exit_code != 0:
+                raise RuntimeManagerError(
+                    "FILE_LIST_FAILED",
+                    f"failed to list files: {result.output.decode()}",
+                    500,
+                )
+            
+            lines = result.output.decode().split('\n')
+            files = []
+            
+            # 跳过第一行（total ...）和最后一行（空行）
+            for line in lines[1:-1]:
+                if not line.strip():
+                    continue
+                
+                parts = line.split()
+                if len(parts) < 9:
+                    continue
+                
+                permissions = parts[0]
+                name = ' '.join(parts[8:])
+                size = int(parts[4]) if parts[4].isdigit() else 0
+                
+                # 判断是否是目录
+                is_dir = permissions.startswith('d')
+                
+                # 跳过 . 和 ..
+                if name in ['.', '..']:
+                    continue
+                
+                files.append({
+                    'name': name,
+                    'path': f'{path}/{name}' if path != '/' else f'/{name}',
+                    'type': 'directory' if is_dir else 'file',
+                    'size': size,
+                })
+            
+            return files
+        except RuntimeManagerError:
+            raise
+        except Exception as e:
+            logger.exception("Failed to list files")
+            raise RuntimeManagerError(
+                "FILE_LIST_FAILED",
+                f"failed to list files: {str(e)}",
+                500,
+            ) from e
+
+    def read_file(self, container_id: str, path: str) -> str:
+        """
+        读取容器内的文件内容
+        """
+        try:
+            container = self._get_container_by_id(container_id)
+            
+            # 使用 cat 命令读取文件
+            cmd = ['cat', path]
+            result = container.exec_run(cmd, user='node')
+            
+            if result.exit_code != 0:
+                raise RuntimeManagerError(
+                    "FILE_READ_FAILED",
+                    f"failed to read file: {result.output.decode()}",
+                    500,
+                )
+            
+            return result.output.decode()
+        except RuntimeManagerError:
+            raise
+        except Exception as e:
+            logger.exception("Failed to read file")
+            raise RuntimeManagerError(
+                "FILE_READ_FAILED",
+                f"failed to read file: {str(e)}",
+                500,
+            ) from e
+
+    def write_file(self, container_id: str, path: str, content: str) -> None:
+        """
+        写入文件内容到容器内
+        """
+        try:
+            container = self._get_container_by_id(container_id)
+            
+            import tempfile
+            import os
+            import tarfile
+            from io import BytesIO
+            
+            # 获取文件名和目录
+            file_dir = os.path.dirname(path)
+            file_name = os.path.basename(path)
+            
+            # 处理二进制内容
+            content_bytes = content.encode('utf-8') if isinstance(content, str) else content
+            
+            # 创建 tar 归档
+            tar_buffer = BytesIO()
+            with tarfile.open(fileobj=tar_buffer, mode='w') as tar:
+                tarinfo = tarfile.TarInfo(name=file_name)
+                tarinfo.size = len(content_bytes)
+                tarinfo.mtime = int(time.time())
+                tarinfo.mode = 0o644
+                tar.addfile(tarinfo, BytesIO(content_bytes))
+            
+            tar_buffer.seek(0)
+            
+            # 将 tar 归档放入容器
+            container.put_archive(file_dir, tar_buffer)
+            
+            logger.info(f"Successfully wrote file: {path}")
+        except RuntimeManagerError:
+            raise
+        except Exception as e:
+            logger.exception("Failed to write file")
+            raise RuntimeManagerError(
+                "FILE_WRITE_FAILED",
+                f"failed to write file: {str(e)}",
+                500,
+            ) from e

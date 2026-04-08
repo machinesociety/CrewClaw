@@ -23,6 +23,14 @@ from app.repositories.usage_repository import (
     UsageRepository,
     get_inmemory_usage_repository,
 )
+from app.repositories.model_repository import (
+    ModelRepository,
+    ProviderCredentialRepository,
+    UsageRepository,
+    get_inmemory_model_repository,
+    get_inmemory_provider_credential_repository,
+    get_inmemory_usage_repository,
+)
 from app.schemas.admin import (
     AdminUsageSummaryResponse,
     AdminUserDetailResponse,
@@ -41,6 +49,7 @@ from app.schemas.models import AdminModelItem, AdminModelListResponse, UpdateAdm
 from app.services.usage_service import UsageService
 from app.services.runtime_service import RuntimeService
 from app.services.user_service import UserService
+from app.services.model_service import ModelService, ProviderCredentialService
 
 
 router = APIRouter(tags=["admin"])

@@ -206,6 +206,30 @@ class RuntimeService:
     def get_task(self, task_id: str) -> RuntimeTask | None:
         return self._task_repo.get(task_id)
 
+    def get_user_binding(self, user_id: str):
+        """
+        获取用户的 runtime binding
+        """
+        return self._binding_service.ensure_binding(user_id)
+
+    def list_files(self, runtime_id: str, path: str) -> list[dict]:
+        """
+        列出容器内的文件
+        """
+        return self._runtime_manager.list_files(runtime_id, path)
+
+    def read_file(self, runtime_id: str, path: str) -> str:
+        """
+        读取容器内的文件
+        """
+        return self._runtime_manager.read_file(runtime_id, path)
+
+    def write_file(self, runtime_id: str, path: str, content: str | bytes) -> None:
+        """
+        写入文件到容器内
+        """
+        self._runtime_manager.write_file(runtime_id, path, content)
+
 
 class InMemoryRuntimeTaskRepository(RuntimeTaskRepository):
     def __init__(self) -> None:
@@ -291,4 +315,13 @@ class RuntimeManagerPortAdapter(RuntimeManagerPort):
             retention_policy=retention_policy,
             compat=compat,
         )
+
+    def list_files(self, runtime_id: str, path: str) -> list[dict]:
+        return self._client.list_files(runtime_id=runtime_id, path=path)
+
+    def read_file(self, runtime_id: str, path: str) -> str:
+        return self._client.read_file(runtime_id=runtime_id, path=path)
+
+    def write_file(self, runtime_id: str, path: str, content: str | bytes) -> None:
+        self._client.write_file(runtime_id=runtime_id, path=path, content=content)
 
