@@ -2,8 +2,7 @@
 
 ## 用法
 
-使用管理员模式打开windows的powershell，进入仓库目录，将文件 "\oneclick\start-crewclaw.ps1" 内容直接复制粘贴在powershell并回车
-
+使用管理员模式打开windows的powershell，进入仓库目录，将文件 "\oneclick\start-crewclaw\.ps1" 内容直接复制粘贴在powershell并回车。
 
 ## 脚本做了什么
 
@@ -20,7 +19,6 @@
 1. **需要下载并安装 Docker Desktop**：
    - 从 [Docker 官网](https://www.docker.com/products/docker-desktop/) 下载并安装 Docker Desktop for Windows
    - 安装完成后，确保 Docker Desktop 已启动并运行
-
 2. **WSL 服务要求**：
    - Windows 电脑的 BIOS 需要支持硬盘虚拟化（Intel VT-x 或 AMD-V）
    - 需要启用 Windows Subsystem for Linux (WSL)
@@ -28,20 +26,26 @@
      ```powershell
      wsl --install
      ```
-
 3. **API Key 配置**：
    - 必须在 `infra/compose/.env` 文件中填好 `DASHSCOPE_API_KEY`，否则 LiteLLM 调用 DashScope 会返回 500 错误
    - 示例：
      ```
      DASHSCOPE_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
      ```
-
 4. **访问方式**：
    - 服务启动后，可以通过 `http://clawloops.<IP>.nip.io` 访问 CrewClaw
    - OpenClaw 运行时通过“宿主机随机端口”暴露（例如 `:32801`）
-
 5. **防火墙设置**：
    - 若需要从网络其他设备访问，请确保 Windows 防火墙允许 Docker 相关端口的访问
+6. **镜像下载失败处理**：
+   - 若镜像拉取不下来（国内网络可能受限），可以使用国内节点拉取镜像：
+     ```powershell
+     docker pull ghcr.nju.edu.cn/openclaw/openclaw@sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02
+     ```
+   - 然后通过命令进行重命名：
+     ```powershell
+     docker tag ghcr.nju.edu.cn/openclaw/openclaw@sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02 ghcr.io/openclaw/openclaw@sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02
+     ```
 
 ## 故障排除
 
@@ -49,3 +53,4 @@
 - **WSL 错误**：请检查 BIOS 虚拟化设置是否启用，并确保 WSL 已正确安装
 - **端口冲突**：若遇到端口冲突，请检查是否有其他服务占用了 80、443 或 8080 端口
 - **API Key 错误**：请确保 `DASHSCOPE_API_KEY` 已正确填写且有效
+
