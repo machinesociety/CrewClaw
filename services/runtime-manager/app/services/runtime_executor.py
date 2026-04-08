@@ -17,8 +17,10 @@ from app.schemas.contracts import (
     EnsureContainerRequest,
     StopContainerRequest,
 )
-from app.services.config_writer import prepare_runtime_dirs, write_openclaw_config
+from app.services.config_writer import prepare_runtime_dirs, prepare_skill_dirs, write_openclaw_config
 from app.services.drift_detector import detect_drift
+from app.services.skill_exporter import sync_skill_export
+from app.services.skill_paths import container_workspace_skills_mount, skills_export_dir
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -93,6 +95,15 @@ class RuntimeExecutor:
                 500,
             ) from e
         
+        volumes = {
+            req.compat.openclawConfigDir: {"bind": "/home/node/.openclaw", "mode": "rw"},
+            req.compat.openclawWorkspaceDir: {
+                "bind": "/home/node/.openclaw/workspace",
+                "mode": "rw",
+            },
+            str(skills_export_dir(req.userId)): {"bind": container_workspace_skills_mount(), "mode": "ro"},
+        }
+
         container = self._docker.containers.create(
             image=self._settings.runtime_openclaw_image_ref,
             command=self._settings.runtime_openclaw_command.split(" "),
@@ -103,16 +114,16 @@ class RuntimeExecutor:
                 "TZ": "UTC",
                 "OPENAI_BASE_URL": "http://litellm:4000",
             },
-            volumes={
-                req.compat.openclawConfigDir: {"bind": "/home/node/.openclaw", "mode": "rw"},
-                req.compat.openclawWorkspaceDir: {
-                    "bind": "/home/node/.openclaw/workspace",
-                    "mode": "rw",
-                },
-            },
+            volumes=volumes,
             ports={"18789/tcp": None},
         )
-        network = self._docker.networks.get(self._settings.runtime_openclaw_network)
+        try:
+            network = self._docker.networks.get(self._settings.runtime_openclaw_network)
+        except NotFound:
+            network = self._docker.networks.create(
+                name=self._settings.runtime_openclaw_network,
+                driver="bridge",
+            )
         network.connect(container, aliases=[alias])
         container.start()
         return container
@@ -125,6 +136,12 @@ class RuntimeExecutor:
             
             prepare_runtime_dirs(req.compat.openclawConfigDir, req.compat.openclawWorkspaceDir)
             logger.info("Prepared runtime dirs")
+
+            prepare_skill_dirs(req.userId)
+            logger.info("Prepared skill dirs")
+
+            sync_skill_export(req.userId)
+            logger.info("Synced skill export")
             
             write_openclaw_config(req.compat.openclawConfigDir, req.renderedConfig.openclawJson)
             logger.info("Wrote openclaw config")
@@ -150,14 +167,26 @@ class RuntimeExecutor:
                 # 如果容器已停止，直接启动它
                 if container.status in {"exited", "created"}:
                     logger.info("Starting existing stopped container")
-                    container.start()
-                    container.reload()
+                    try:
+                        container.start()
+                        container.reload()
+                    except APIError as exc:
+                        logger.error(f"Failed to start existing container: {exc}, recreating")
+                        container.remove(force=True)
+                        container = None
+                        existing_containers = []
                     
-                    if container.status != "running":
+                    if container is not None and container.status != "running":
                         logger.error(f"Failed to start existing container, status: {container.status}")
-                        raise RuntimeManagerError("RUNTIME_START_FAILED", "failed to start existing container", 500)
+                        container.remove(force=True)
+                        container = None
                 elif container.status == "running":
                     logger.info("Container is already running")
+                    drifts = detect_drift(container, req, self._settings)
+                    if drifts:
+                        logger.info(f"Drifts detected: {drifts}, recreating container")
+                        container.remove(force=True)
+                        container = None
                 else:
                     # 如果容器处于其他状态（如 restarting, paused, dead），删除并重建
                     logger.info(f"Container in unexpected state: {container.status}, removing and recreating")

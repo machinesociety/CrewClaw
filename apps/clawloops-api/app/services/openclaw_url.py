@@ -42,3 +42,19 @@ def merge_with_existing_token(new_browser_url: str | None, existing_browser_url:
     """
     existing_token = extract_gateway_token_from_url(existing_browser_url)
     return build_openclaw_chat_url(new_browser_url, existing_token)
+
+
+def replace_openclaw_path(browser_url: str | None, new_path: str) -> str | None:
+    if not browser_url:
+        return None
+    parsed = urlparse(browser_url)
+    return urlunparse(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            new_path,
+            parsed.params,
+            "",
+            parsed.fragment,
+        )
+    )
