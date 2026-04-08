@@ -14,7 +14,7 @@ model_list:
       api_base: os.environ/OLLAMA_BASE_URL
   - model_name: openrouter-gpt-4o-mini
     litellm_params:
-      model: openrouter/openai/gpt-4o-mini
+      model: openrouter/z-ai/glm-4.5-air:free
       api_key: os.environ/OPENROUTER_API_KEY
 
 litellm_settings:
