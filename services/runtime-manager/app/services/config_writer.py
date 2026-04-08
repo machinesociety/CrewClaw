@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 
 from app.core.errors import RuntimeManagerError
+from app.services.skill_paths import skills_export_dir, skills_public_dir, skills_user_dir
 
 
 # Check if running on Windows
@@ -61,6 +62,19 @@ def prepare_runtime_dirs(config_dir: str, workspace_dir: str) -> None:
     if workspace_path != config_path:
         _prepare_dir(workspace_path)
         _apply_recursive_permissions(workspace_path)
+
+
+def prepare_skill_dirs(user_id: str) -> None:
+    public_path = skills_public_dir()
+    user_path = skills_user_dir(user_id)
+    _prepare_dir(public_path)
+    _apply_recursive_permissions(public_path)
+    if user_path != public_path:
+        _prepare_dir(user_path)
+        _apply_recursive_permissions(user_path)
+    export_path = skills_export_dir(user_id)
+    _prepare_dir(export_path)
+    _apply_recursive_permissions(export_path)
 
 
 def write_openclaw_config(config_dir: str, openclaw_json: dict) -> str:

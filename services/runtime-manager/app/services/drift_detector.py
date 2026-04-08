@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from app.core.settings import Settings
 from app.schemas.contracts import EnsureContainerRequest
+from app.services.skill_paths import (
+    container_workspace_skills_mount,
+    skills_export_dir,
+)
 
 
 def _env_map(container) -> dict[str, str]:
@@ -37,6 +41,7 @@ def detect_drift(container, req: EnsureContainerRequest, settings: Settings) -> 
     expected_pairs = {
         (req.compat.openclawConfigDir, "/home/node/.openclaw"),
         (req.compat.openclawWorkspaceDir, "/home/node/.openclaw/workspace"),
+        (str(skills_export_dir(req.userId)), container_workspace_skills_mount()),
     }
     if not expected_pairs.issubset(mount_pairs):
         drifts.append("mounts")

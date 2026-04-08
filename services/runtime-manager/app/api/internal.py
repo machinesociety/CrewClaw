@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 
 from app.core.errors import RuntimeManagerError
@@ -13,6 +13,8 @@ from app.schemas.contracts import (
     StopContainerRequest,
 )
 from app.services.runtime_executor import RuntimeExecutor
+from app.services.skill_exporter import sync_all_skill_exports, sync_skill_export
+from app.services.skill_storage import list_skill_files, read_skill_file, write_skill_file
 
 
 class FileListResponse(BaseModel):
@@ -28,6 +30,16 @@ class FileWriteRequest(BaseModel):
     path: str
     content: str
     isBinary: bool = False
+
+
+class SkillListItem(BaseModel):
+    name: str
+    size: int
+    modifiedAt: float
+
+
+class SkillListResponse(BaseModel):
+    files: list[SkillListItem]
 
 router = APIRouter(prefix="/internal/runtime-manager", tags=["runtime-manager"])
 
@@ -153,5 +165,58 @@ def write_file(body: FileWriteRequest) -> dict:
         
         executor.write_file(container.id, body.path, content)
         return {"success": True}
+    except RuntimeManagerError as err:
+        _raise_http(err)
+
+
+@router.get(
+    "/skills/list",
+    response_model=SkillListResponse,
+    responses={400: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def list_skills(scope: str, userId: str | None = None) -> SkillListResponse:
+    try:
+        files = list_skill_files(scope=scope, user_id=userId)
+        return SkillListResponse(files=[SkillListItem(name=f.name, size=f.size, modifiedAt=f.modifiedAt) for f in files])
+    except RuntimeManagerError as err:
+        _raise_http(err)
+
+
+@router.post(
+    "/skills/upload",
+    response_model=SkillListItem,
+    responses={400: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+async def upload_skill(
+    scope: str = Form(...),
+    userId: str | None = Form(None),
+    name: str | None = Form(None),
+    file: UploadFile = File(...),
+) -> SkillListItem:
+    try:
+        content = await file.read()
+        target_name = name or file.filename or "skill"
+        saved = write_skill_file(scope=scope, user_id=userId, name=target_name, data=content)
+        if scope == "user" and userId is not None:
+            sync_skill_export(userId)
+        if scope == "public":
+            sync_all_skill_exports()
+        return SkillListItem(name=saved.name, size=saved.size, modifiedAt=saved.modifiedAt)
+    except RuntimeManagerError as err:
+        _raise_http(err)
+
+
+@router.get(
+    "/skills/download",
+    responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def download_skill(scope: str, name: str, userId: str | None = None) -> Response:
+    try:
+        filename, data = read_skill_file(scope=scope, user_id=userId, name=name)
+        return Response(
+            content=data,
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
     except RuntimeManagerError as err:
         _raise_http(err)
