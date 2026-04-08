@@ -6,7 +6,7 @@ from app.domain.users import ObservedState
 from app.infra.runtime_manager_client import RuntimeManagerClient
 from app.schemas.runtime import WorkspaceEntryReason
 from app.schemas.workspace import WorkspaceEntryResponse
-from app.services.openclaw_url import merge_with_existing_token
+from app.services.openclaw_url import merge_with_existing_token, replace_openclaw_path
 from app.services.user_service import UserService
 
 
@@ -94,6 +94,7 @@ async def get_workspace_entry(
 async def redirect_workspace_entry(
     ctx=Depends(require_active_user),
     user_service: UserService = Depends(get_user_service),
+    path: str | None = None,
 ) -> RedirectResponse:
     """
     通过控制面中间跳转，避免前端直接拼接 OpenClaw 明文地址。
@@ -105,5 +106,9 @@ async def redirect_workspace_entry(
             detail="workspace runtime not ready",
         )
 
-    return RedirectResponse(url=binding.browser_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
-
+    target = binding.browser_url
+    if path is not None:
+        if path not in {"/chat", "/skills"}:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid path")
+        target = replace_openclaw_path(binding.browser_url, path) or binding.browser_url
+    return RedirectResponse(url=target, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
