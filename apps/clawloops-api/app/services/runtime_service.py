@@ -56,6 +56,12 @@ class RuntimeService:
         创建或启动 runtime，并回写 binding 状态。
         """
         binding = self._binding_service.ensure_binding(user_id)
+        
+        active_tasks = self._task_repo.get_active_tasks_for_user(user_id, binding.runtimeId)
+        if active_tasks:
+            task = active_tasks[0]
+            raise RuntimeError(f"已有{task.action.value}任务正在进行中，请稍后再试")
+        
         task = self._new_task(user_id, binding.runtimeId, RuntimeAction.ENSURE_RUNNING)
         task.start()
         self._task_repo.save(task)
@@ -126,6 +132,12 @@ class RuntimeService:
         幂等停止 runtime。
         """
         binding = self._binding_service.ensure_binding(user_id)
+        
+        active_tasks = self._task_repo.get_active_tasks_for_user(user_id, binding.runtimeId)
+        if active_tasks:
+            task = active_tasks[0]
+            raise RuntimeError(f"已有{task.action.value}任务正在进行中，请稍后再试")
+            
         task = self._new_task(user_id, binding.runtimeId, RuntimeAction.STOP)
         task.start()
         self._task_repo.save(task)
@@ -163,6 +175,12 @@ class RuntimeService:
         删除 runtime，并按 retentionPolicy 更新 binding。
         """
         binding = self._binding_service.ensure_binding(user_id)
+        
+        active_tasks = self._task_repo.get_active_tasks_for_user(user_id, binding.runtimeId)
+        if active_tasks:
+            task = active_tasks[0]
+            raise RuntimeError(f"已有{task.action.value}任务正在进行中，请稍后再试")
+            
         effective_policy = retention_policy or binding.retentionPolicy.value
         task = self._new_task(user_id, binding.runtimeId, RuntimeAction.DELETE)
         task.start()
@@ -206,6 +224,30 @@ class RuntimeService:
     def get_task(self, task_id: str) -> RuntimeTask | None:
         return self._task_repo.get(task_id)
 
+    def get_user_binding(self, user_id: str):
+        """
+        获取用户的 runtime binding
+        """
+        return self._binding_service.ensure_binding(user_id)
+
+    def list_files(self, runtime_id: str, path: str) -> list[dict]:
+        """
+        列出容器内的文件
+        """
+        return self._runtime_manager.list_files(runtime_id, path)
+
+    def read_file(self, runtime_id: str, path: str) -> str:
+        """
+        读取容器内的文件
+        """
+        return self._runtime_manager.read_file(runtime_id, path)
+
+    def write_file(self, runtime_id: str, path: str, content: str | bytes) -> None:
+        """
+        写入文件到容器内
+        """
+        self._runtime_manager.write_file(runtime_id, path, content)
+
 
 class InMemoryRuntimeTaskRepository(RuntimeTaskRepository):
     def __init__(self) -> None:
@@ -216,6 +258,15 @@ class InMemoryRuntimeTaskRepository(RuntimeTaskRepository):
 
     def get(self, task_id: str) -> RuntimeTask | None:
         return self._tasks.get(task_id)
+        
+    def get_active_tasks_for_user(self, user_id: str, runtime_id: str) -> list[RuntimeTask]:
+        from app.domain.runtime import TaskStatus
+        return [
+            task for task in self._tasks.values()
+            if task.user_id == user_id 
+            and task.runtime_id == runtime_id 
+            and task.status in [TaskStatus.PENDING, TaskStatus.RUNNING]
+        ]
 
 
 class UserRuntimeBindingServiceAdapter(UserRuntimeBindingServicePort):
@@ -291,4 +342,13 @@ class RuntimeManagerPortAdapter(RuntimeManagerPort):
             retention_policy=retention_policy,
             compat=compat,
         )
+
+    def list_files(self, runtime_id: str, path: str) -> list[dict]:
+        return self._client.list_files(runtime_id=runtime_id, path=path)
+
+    def read_file(self, runtime_id: str, path: str) -> str:
+        return self._client.read_file(runtime_id=runtime_id, path=path)
+
+    def write_file(self, runtime_id: str, path: str, content: str | bytes) -> None:
+        self._client.write_file(runtime_id=runtime_id, path=path, content=content)
 

@@ -20,6 +20,10 @@ from app.domain.users import UserStatus
 from app.models.invitation import InvitationModel
 from app.models.user import UserModel, UserRuntimeBindingModel
 from app.repositories.invitation_repository import InvitationRepository
+from app.repositories.usage_repository import (
+    UsageRepository,
+    get_inmemory_usage_repository,
+)
 from app.repositories.model_repository import (
     ModelRepository,
     ProviderCredentialRepository,
@@ -43,9 +47,10 @@ from app.schemas.credentials import (
     VerifyProviderCredentialResponse,
 )
 from app.schemas.models import AdminModelItem, AdminModelListResponse, UpdateAdminModelRequest
-from app.services.model_service import ModelService, ProviderCredentialService, UsageService
+from app.services.usage_service import UsageService
 from app.services.runtime_service import RuntimeService
 from app.services.user_service import UserService
+from app.services.model_service import ModelService, ProviderCredentialService
 
 
 router = APIRouter(tags=["admin"])

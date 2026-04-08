@@ -1,31 +1,32 @@
 from pydantic import BaseModel
+from typing import List, Optional
 
 
 class ModelItem(BaseModel):
     modelId: str
     name: str
-    provider: str | None = None
+    provider: str
     source: str
-    enabled: bool = True
-    defaultRoute: str | None = None
+    enabled: bool
+    defaultRoute: str
 
 
 class ModelListResponse(BaseModel):
-    models: list[ModelItem]
+    models: List[ModelItem]
 
 
-class AdminModelItem(ModelItem):
-    userVisible: bool = True
-    defaultProviderCredentialId: str | None = None
+class AdminModelItem(BaseModel):
+    modelId: str
+    name: str
+    provider: str
+    source: str
+    enabled: bool
+    defaultRoute: str
 
 
 class AdminModelListResponse(BaseModel):
-    models: list[AdminModelItem]
+    models: List[AdminModelItem]
 
 
 class UpdateAdminModelRequest(BaseModel):
-    enabled: bool | None = None
-    userVisible: bool | None = None
-    defaultRoute: str | None = None
-    defaultProviderCredentialId: str | None = None
-
+    enabled: bool

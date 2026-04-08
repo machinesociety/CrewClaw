@@ -67,3 +67,30 @@ class RuntimeManagerClient:
     def get_container(self, runtime_id: str) -> dict[str, Any]:
         return self._request("GET", f"/internal/runtime-manager/containers/{runtime_id}")
 
+    def list_files(self, runtime_id: str, path: str) -> list[dict]:
+        response_data = self._request("GET", f"/internal/runtime-manager/files/list?runtimeId={runtime_id}&path={path}")
+        # 确保返回的是一个列表
+        if isinstance(response_data, dict) and 'files' in response_data:
+            return response_data['files']
+        return []
+
+    def read_file(self, runtime_id: str, path: str) -> str:
+        result = self._request("GET", f"/internal/runtime-manager/files/read?runtimeId={runtime_id}&path={path}")
+        return result.get("content", "")
+
+    def write_file(self, runtime_id: str, path: str, content: str | bytes) -> None:
+        # 如果是二进制内容，转换为base64编码
+        import base64
+        if isinstance(content, bytes):
+            content = base64.b64encode(content).decode('utf-8')
+            is_binary = True
+        else:
+            is_binary = False
+        
+        self._request("PUT", "/internal/runtime-manager/files/write", {
+            "runtimeId": runtime_id,
+            "path": path,
+            "content": content,
+            "isBinary": is_binary
+        })
+

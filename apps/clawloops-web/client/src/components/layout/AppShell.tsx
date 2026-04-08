@@ -21,6 +21,7 @@ import {
   ChevronRight,
   Settings,
   Home,
+  FolderOpen,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -45,6 +46,7 @@ interface NavItem {
 const userNavItems: NavItem[] = [
   { label: '工作台', href: '/app', icon: LayoutDashboard },
   { label: '工作区入口', href: '/workspace-entry', icon: ExternalLink },
+  { label: '文件浏览器', href: '/file-browser', icon: FolderOpen },
 ];
 
 const adminNavItems: NavItem[] = [

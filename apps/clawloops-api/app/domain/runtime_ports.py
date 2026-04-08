@@ -78,6 +78,15 @@ class RuntimeManagerPort(Protocol):
     ) -> dict:
         ...
 
+    def list_files(self, runtime_id: str, path: str) -> list[dict]:
+        ...
+
+    def read_file(self, runtime_id: str, path: str) -> str:
+        ...
+
+    def write_file(self, runtime_id: str, path: str, content: str | bytes) -> None:
+        ...
+
 
 class RuntimeTaskRepository(Protocol):
     """
@@ -88,5 +97,8 @@ class RuntimeTaskRepository(Protocol):
         ...
 
     def get(self, task_id: str) -> RuntimeTask | None:
+        ...
+        
+    def get_active_tasks_for_user(self, user_id: str, runtime_id: str) -> list[RuntimeTask]:
         ...
 
