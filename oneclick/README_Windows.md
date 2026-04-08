@@ -2,17 +2,8 @@
 
 ## 用法
 
-在仓库目录执行：
+使用管理员模式打开windows的powershell，进入仓库目录，将文件 "\oneclick\start-crewclaw.ps1" 内容直接复制粘贴在powershell并回车
 
-```powershell
-powershell -ExecutionPolicy Bypass -File oneclick\start-crewclaw.ps1
-```
-
-或指定仓库路径：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File "C:\path\to\CrewClaw\oneclick\start-crewclaw.ps1" "C:\path\to\CrewClaw"
-```
 
 ## 脚本做了什么
 
