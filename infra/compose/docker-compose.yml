@@ -100,6 +100,18 @@ services:
       - prewarm
     image: "ghcr.io/berriai/litellm:v1.81.3-stable"
 
+  # Optional local Ollama service. Enable with `--profile ollama`.
+  ollama:
+    profiles:
+      - ollama
+    image: "ollama/ollama:latest"
+    container_name: crewclaw-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - clawloops_shared
+
   litellm:
     image: "ghcr.io/berriai/litellm:v1.81.3-stable"
     container_name: crewclaw-litellm
@@ -114,6 +126,8 @@ services:
     environment:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-local-master}
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
     volumes:
       - ./litellm.config.yaml:/app/config.yaml:ro
     networks:
@@ -124,4 +138,5 @@ networks:
     name: clawloops_shared
     driver: bridge
 
-volumes: {}
+volumes:
+  ollama_data:
