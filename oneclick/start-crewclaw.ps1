@@ -1,4 +1,4 @@
-try {
+﻿try {
     wsl --update --web-download
 } catch {
 }
@@ -11,8 +11,26 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
 # 3. 下载工作台镜像
 # ----------------------------
 try {
-    docker pull ghcr.io/openclaw/openclaw@sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02
+    Write-Host "尝试使用国内镜像源下载工作台镜像..." -ForegroundColor Cyan
+    # 首先尝试使用国内镜像源
+    docker pull ghcr.nju.edu.cn/openclaw/openclaw@sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02
+    
+    # 如果成功拉取，进行重命名
+    docker tag ghcr.nju.edu.cn/openclaw/openclaw@sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02 ghcr.io/openclaw/openclaw@sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02
+    Write-Host "使用国内镜像源下载成功" -ForegroundColor Green
 } catch {
+    Write-Host "国内镜像源下载失败，尝试使用原始源..." -ForegroundColor Yellow
+    # 如果国内镜像源失败，尝试使用原始源
+    try {
+        docker pull ghcr.io/openclaw/openclaw@sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02
+        Write-Host "使用原始源下载成功" -ForegroundColor Green
+    } catch {
+        Write-Host "镜像下载失败，请手动下载镜像" -ForegroundColor Red
+        Write-Host "建议：修改 Docker 配置文件，添加国内镜像源" -ForegroundColor Yellow
+        Write-Host "Docker 配置文件位置：C:\ProgramData\Docker\config\daemon.json" -ForegroundColor Yellow
+        Write-Host "添加以下内容：" -ForegroundColor Yellow
+        Write-Host '{"registry-mirrors": ["https://docker.mirrors.ustc.edu.cn", "https://hub-mirror.c.163.com"]}' -ForegroundColor Yellow
+    }
 }
 
 
