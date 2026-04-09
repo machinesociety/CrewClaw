@@ -11,56 +11,121 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
 # 3. 下载工作台镜像
 # ----------------------------
 $imageDigest = "sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02"
+$finalTag = "ghcr.io/openclaw/openclaw:latest"
 
-try {
-    Write-Host "尝试使用国内镜像源下载工作台镜像..." -ForegroundColor Cyan
-    # 首先尝试使用国内镜像源
-    $pullResult = docker pull ghcr.nju.edu.cn/openclaw/openclaw@$imageDigest
+# 定义国内镜像源列表
+$domesticMirrors = @(
+    "ghcr.nju.edu.cn/openclaw/openclaw"
+    "docker.mirrors.ustc.edu.cn/openclaw/openclaw"
+    "hub-mirror.c.163.com/openclaw/openclaw"
+    "mirror.baidubce.com/openclaw/openclaw"
+)
+
+# 定义超时时间（30分钟）
+$timeoutMinutes = 30
+$timeoutMilliseconds = $timeoutMinutes * 60 * 1000  # 转换为毫秒
+Write-Host "超时时间设置为: $timeoutMinutes 分钟 ($timeoutMilliseconds 毫秒)" -ForegroundColor Cyan
+
+# 带超时的镜像下载函数
+function Download-ImageWithTimeout {
+    param(
+        [string]$mirror
+    )
     
-    # 检查命令执行结果
-    if ($LASTEXITCODE -eq 0) {
-        # 获取镜像ID
-        $imageId = docker images -q ghcr.nju.edu.cn/openclaw/openclaw@$imageDigest
+    Write-Host "尝试从镜像源下载: $mirror..." -ForegroundColor Cyan
+    $startTime = Get-Date
+    Write-Host "开始时间: $startTime" -ForegroundColor Cyan
+    
+    # 创建临时文件来存储输出
+    $tempFile = [System.IO.Path]::GetTempFileName()
+    
+    try {
+        # 创建一个新的PowerShell进程来执行docker pull命令
+        $process = Start-Process -FilePath "powershell.exe" -ArgumentList "-Command", "docker pull $mirror@$imageDigest 2>&1 | Out-File -FilePath '$tempFile' -Force" -PassThru -NoNewWindow
         
-        # 如果成功获取镜像ID，进行重命名（使用latest标签）
+        # 等待进程完成或超时
+        $completed = $process.WaitForExit($timeoutMilliseconds)
+        
+        $endTime = Get-Date
+        $elapsedTime = $endTime - $startTime
+        Write-Host "结束时间: $endTime" -ForegroundColor Cyan
+        Write-Host "实际用时: $($elapsedTime.TotalMinutes.ToString('0.00')) 分钟" -ForegroundColor Cyan
+        
+        if (-not $completed) {
+            # 超时，终止进程
+            $process.Kill()
+            Write-Host "下载超时（超过 $timeoutMinutes 分钟），切换到下一个镜像源..." -ForegroundColor Yellow
+            return $false
+        }
+        
+        # 读取命令输出
+        $output = Get-Content -Path $tempFile -Raw
+        
+        # 显示命令输出
+        Write-Host $output
+        
+        # 检查命令执行结果
+        if ($process.ExitCode -eq 0 -or $output -match "Image is up to date") {
+            Write-Host "镜像下载成功" -ForegroundColor Green
+            return $true
+        } else {
+            Write-Host "镜像下载失败，切换到下一个镜像源..." -ForegroundColor Yellow
+            return $false
+        }
+    } finally {
+        # 清理临时文件
+        if (Test-Path $tempFile) {
+            Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+# 尝试使用国内镜像源
+$downloadSuccess = $false
+foreach ($mirror in $domesticMirrors) {
+    if (Download-ImageWithTimeout -mirror $mirror) {
+        # 下载成功，获取镜像ID并进行重命名
+        $imageId = docker images -q $mirror@$imageDigest
         if ($imageId) {
-            $finalTag = "ghcr.io/openclaw/openclaw:latest"
             $tagResult = docker tag $imageId $finalTag
-            
             if ($LASTEXITCODE -eq 0) {
-                Write-Host "使用国内镜像源下载成功" -ForegroundColor Green
+                Write-Host "镜像重命名成功" -ForegroundColor Green
+                $downloadSuccess = $true
+                break
             } else {
-                throw "重命名镜像失败"
+                Write-Host "镜像重命名失败，继续尝试下一个镜像源..." -ForegroundColor Yellow
             }
         } else {
-            throw "获取镜像ID失败"
+            Write-Host "获取镜像ID失败，继续尝试下一个镜像源..." -ForegroundColor Yellow
         }
-    } else {
-        throw "国内镜像源下载失败"
     }
-} catch {
-    Write-Host "国内镜像源下载失败，尝试使用原始源..." -ForegroundColor Yellow
-    # 如果国内镜像源失败，尝试使用原始源
+}
+
+# 如果所有国内镜像源都失败，尝试使用原始源
+if (-not $downloadSuccess) {
+    Write-Host "所有国内镜像源下载失败，尝试使用原始源..." -ForegroundColor Yellow
     try {
-        $pullResult = docker pull ghcr.io/openclaw/openclaw@$imageDigest
-        if ($LASTEXITCODE -eq 0) {
+        if (Download-ImageWithTimeout -mirror "ghcr.io/openclaw/openclaw") {
             # 获取镜像ID并创建latest标签
             $imageId = docker images -q ghcr.io/openclaw/openclaw@$imageDigest
             if ($imageId) {
                 $finalTag = "ghcr.io/openclaw/openclaw:latest"
                 docker tag $imageId $finalTag 2>$null
+                $downloadSuccess = $true
             }
-            Write-Host "使用原始源下载成功" -ForegroundColor Green
-        } else {
-            throw "原始源下载失败"
         }
     } catch {
-        Write-Host "镜像下载失败，请手动下载镜像" -ForegroundColor Red
-        Write-Host "建议：修改 Docker 配置文件，添加国内镜像源" -ForegroundColor Yellow
-        Write-Host "Docker 配置文件位置：C:\ProgramData\Docker\config\daemon.json" -ForegroundColor Yellow
-        Write-Host "添加以下内容：" -ForegroundColor Yellow
-        Write-Host '{"registry-mirrors": ["https://docker.mirrors.ustc.edu.cn", "https://hub-mirror.c.163.com"]}' -ForegroundColor Yellow
+        Write-Host "原始源下载失败" -ForegroundColor Red
     }
+}
+
+# 如果所有镜像源都失败
+if (-not $downloadSuccess) {
+    Write-Host "镜像下载失败，请手动下载镜像" -ForegroundColor Red
+    Write-Host "建议：修改 Docker 配置文件，添加国内镜像源" -ForegroundColor Yellow
+    Write-Host "Docker 配置文件位置：C:\ProgramData\Docker\config\daemon.json" -ForegroundColor Yellow
+    Write-Host "添加以下内容：" -ForegroundColor Yellow
+    Write-Host '{"registry-mirrors": ["https://docker.mirrors.ustc.edu.cn", "https://hub-mirror.c.163.com", "https://mirror.baidubce.com"]}' -ForegroundColor Yellow
 }
 
 
