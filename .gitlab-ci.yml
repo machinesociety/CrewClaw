@@ -1,18 +1,21 @@
 stages:
   - test
 
-test-windows:
-  stage: test
-  tags:
-    - windows
-  script:
-    - echo "Windows Runner is working"
-    - systeminfo | findstr /C:"OS Name"
-
+# 在 Ubuntu 197 上运行
 test-ubuntu:
   stage: test
   tags:
     - ubuntu
   script:
-    - echo "Ubuntu Runner is working"
-    - uname -a
+    - echo "✅ 成功在 Ubuntu 197 服务器运行 CI 任务"
+    - pwd
+    - ls -la
+
+# 在 Windows 198 上运行
+test-windows:
+  stage: test
+  tags:
+    - windows
+  script:
+    - echo "✅ 成功在 Windows 198 服务器运行 CI 任务"
+    - dir
