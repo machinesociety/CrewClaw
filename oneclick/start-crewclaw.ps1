@@ -10,20 +10,50 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
 # ----------------------------
 # 3. 下载工作台镜像
 # ----------------------------
+$imageDigest = "sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02"
+
 try {
     Write-Host "尝试使用国内镜像源下载工作台镜像..." -ForegroundColor Cyan
     # 首先尝试使用国内镜像源
-    docker pull ghcr.nju.edu.cn/openclaw/openclaw@sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02
+    $pullResult = docker pull ghcr.nju.edu.cn/openclaw/openclaw@$imageDigest
     
-    # 如果成功拉取，进行重命名
-    docker tag ghcr.nju.edu.cn/openclaw/openclaw@sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02 ghcr.io/openclaw/openclaw@sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02
-    Write-Host "使用国内镜像源下载成功" -ForegroundColor Green
+    # 检查命令执行结果
+    if ($LASTEXITCODE -eq 0) {
+        # 获取镜像ID
+        $imageId = docker images -q ghcr.nju.edu.cn/openclaw/openclaw@$imageDigest
+        
+        # 如果成功获取镜像ID，进行重命名（使用latest标签）
+        if ($imageId) {
+            $finalTag = "ghcr.io/openclaw/openclaw:latest"
+            $tagResult = docker tag $imageId $finalTag
+            
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "使用国内镜像源下载成功" -ForegroundColor Green
+            } else {
+                throw "重命名镜像失败"
+            }
+        } else {
+            throw "获取镜像ID失败"
+        }
+    } else {
+        throw "国内镜像源下载失败"
+    }
 } catch {
     Write-Host "国内镜像源下载失败，尝试使用原始源..." -ForegroundColor Yellow
     # 如果国内镜像源失败，尝试使用原始源
     try {
-        docker pull ghcr.io/openclaw/openclaw@sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02
-        Write-Host "使用原始源下载成功" -ForegroundColor Green
+        $pullResult = docker pull ghcr.io/openclaw/openclaw@$imageDigest
+        if ($LASTEXITCODE -eq 0) {
+            # 获取镜像ID并创建latest标签
+            $imageId = docker images -q ghcr.io/openclaw/openclaw@$imageDigest
+            if ($imageId) {
+                $finalTag = "ghcr.io/openclaw/openclaw:latest"
+                docker tag $imageId $finalTag 2>$null
+            }
+            Write-Host "使用原始源下载成功" -ForegroundColor Green
+        } else {
+            throw "原始源下载失败"
+        }
     } catch {
         Write-Host "镜像下载失败，请手动下载镜像" -ForegroundColor Red
         Write-Host "建议：修改 Docker 配置文件，添加国内镜像源" -ForegroundColor Yellow
