@@ -16,68 +16,83 @@ $finalTag = "ghcr.io/openclaw/openclaw:latest"
 # 定义国内镜像源列表
 $domesticMirrors = @(
     "ghcr.nju.edu.cn/openclaw/openclaw"
+    "registry.docker-cn.com/openclaw/openclaw"
     "docker.mirrors.ustc.edu.cn/openclaw/openclaw"
     "hub-mirror.c.163.com/openclaw/openclaw"
     "mirror.baidubce.com/openclaw/openclaw"
 )
 
-# 定义超时时间（30分钟）
-$timeoutMinutes = 30
+# 定义超时时间（40分钟）
+$timeoutMinutes = 40
 $timeoutMilliseconds = $timeoutMinutes * 60 * 1000  # 转换为毫秒
-Write-Host "超时时间设置为: $timeoutMinutes 分钟 ($timeoutMilliseconds 毫秒)" -ForegroundColor Cyan
 
-# 带超时的镜像下载函数
+# 带超时和重试的镜像下载函数
 function Download-ImageWithTimeout {
     param(
         [string]$mirror
     )
     
-    Write-Host "尝试从镜像源下载: $mirror..." -ForegroundColor Cyan
-    $startTime = Get-Date
-    Write-Host "开始时间: $startTime" -ForegroundColor Cyan
+    $maxRetries = 4
+    $retryCount = 0
     
-    # 创建临时文件来存储输出
-    $tempFile = [System.IO.Path]::GetTempFileName()
-    
-    try {
-        # 创建一个新的PowerShell进程来执行docker pull命令
-        $process = Start-Process -FilePath "powershell.exe" -ArgumentList "-Command", "docker pull $mirror@$imageDigest 2>&1 | Out-File -FilePath '$tempFile' -Force" -PassThru -NoNewWindow
+    while ($retryCount -lt $maxRetries) {
+        Write-Host "尝试从镜像源下载: $mirror..." -ForegroundColor Cyan
+        Write-Host "尝试次数: $($retryCount + 1)/$maxRetries" -ForegroundColor Cyan
+        $startTime = Get-Date
+        Write-Host "开始时间: $startTime" -ForegroundColor Cyan
         
-        # 等待进程完成或超时
-        $completed = $process.WaitForExit($timeoutMilliseconds)
+        # 创建临时文件来存储输出
+        $tempFile = [System.IO.Path]::GetTempFileName()
         
-        $endTime = Get-Date
-        $elapsedTime = $endTime - $startTime
-        Write-Host "结束时间: $endTime" -ForegroundColor Cyan
-        Write-Host "实际用时: $($elapsedTime.TotalMinutes.ToString('0.00')) 分钟" -ForegroundColor Cyan
-        
-        if (-not $completed) {
-            # 超时，终止进程
-            $process.Kill()
-            Write-Host "下载超时（超过 $timeoutMinutes 分钟），切换到下一个镜像源..." -ForegroundColor Yellow
-            return $false
-        }
-        
-        # 读取命令输出
-        $output = Get-Content -Path $tempFile -Raw
-        
-        # 显示命令输出
-        Write-Host $output
-        
-        # 检查命令执行结果
-        if ($process.ExitCode -eq 0 -or $output -match "Image is up to date") {
-            Write-Host "镜像下载成功" -ForegroundColor Green
-            return $true
-        } else {
-            Write-Host "镜像下载失败，切换到下一个镜像源..." -ForegroundColor Yellow
-            return $false
-        }
-    } finally {
-        # 清理临时文件
-        if (Test-Path $tempFile) {
-            Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
+        try {
+            # 创建一个新的PowerShell进程来执行docker pull命令
+            $process = Start-Process -FilePath "powershell.exe" -ArgumentList "-Command", "docker pull $mirror@$imageDigest 2>&1 | Out-File -FilePath '$tempFile' -Force" -PassThru -NoNewWindow
+            
+            # 等待进程完成或超时
+            $completed = $process.WaitForExit($timeoutMilliseconds)
+            
+            $endTime = Get-Date
+            $elapsedTime = $endTime - $startTime
+            Write-Host "结束时间: $endTime" -ForegroundColor Cyan
+            Write-Host "实际用时: $($elapsedTime.TotalMinutes.ToString('0.00')) 分钟" -ForegroundColor Cyan
+            
+            if (-not $completed) {
+                # 超时，终止进程
+                $process.Kill()
+                Write-Host "下载超时（超过 $timeoutMinutes 分钟），准备重试..." -ForegroundColor Yellow
+                $retryCount++
+                continue
+            }
+            
+            # 读取命令输出
+            $output = Get-Content -Path $tempFile -Raw
+            
+            # 显示命令输出
+            Write-Host $output
+            
+            # 检查命令执行结果
+            if ($process.ExitCode -eq 0 -or $output -match "Image is up to date") {
+                Write-Host "镜像下载成功" -ForegroundColor Green
+                return $true
+            } else {
+                Write-Host "镜像下载失败，准备重试..." -ForegroundColor Yellow
+                $retryCount++
+                continue
+            }
+        } catch {
+            Write-Host "下载过程中出现错误: $($_.Exception.Message)，准备重试..." -ForegroundColor Yellow
+            $retryCount++
+            continue
+        } finally {
+            # 清理临时文件
+            if (Test-Path $tempFile) {
+                Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
+            }
         }
     }
+    
+    Write-Host "已尝试 $maxRetries 次，仍然失败，切换到下一个镜像源..." -ForegroundColor Yellow
+    return $false
 }
 
 # 尝试使用国内镜像源
