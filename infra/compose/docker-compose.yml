@@ -7,6 +7,8 @@ services:
     restart: unless-stopped
     environment:
       - DOCKER_API_VERSION=1.44
+      - NO_PROXY=localhost,127.0.0.1,::1,clawloops-web,clawloops-api,runtime-manager,litellm,ollama,traefik
+      - no_proxy=localhost,127.0.0.1,::1,clawloops-web,clawloops-api,runtime-manager,litellm,ollama,traefik
     command:
       - --configFile=/etc/traefik/traefik.yml
     ports:
@@ -31,6 +33,8 @@ services:
     restart: unless-stopped
     environment:
       - PYTHONUNBUFFERED=1
+      - NO_PROXY=localhost,127.0.0.1,::1,clawloops-web,clawloops-api,runtime-manager,litellm,ollama,traefik
+      - no_proxy=localhost,127.0.0.1,::1,clawloops-web,clawloops-api,runtime-manager,litellm,ollama,traefik
       - CLAWLOOPS_ROUTE_HOST_SUFFIX=${CLAWLOOPS_DOMAIN}
       - CLAWLOOPS_LITELLM_API_KEY=${LITELLM_MASTER_KEY:-sk-local-master}
       - CLAWLOOPS_MODEL_GATEWAY_BASE_URL=${CLAWLOOPS_MODEL_GATEWAY_BASE_URL:-http://litellm:4000}
@@ -55,6 +59,8 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
+      - NO_PROXY=localhost,127.0.0.1,::1,clawloops-web,clawloops-api,runtime-manager,litellm,ollama,traefik
+      - no_proxy=localhost,127.0.0.1,::1,clawloops-web,clawloops-api,runtime-manager,litellm,ollama,traefik
     labels:
       - traefik.enable=true
       - traefik.http.routers.clawloops_web.rule=Host(`${CLAWLOOPS_DOMAIN}`)
