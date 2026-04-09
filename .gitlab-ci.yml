@@ -1,0 +1,18 @@
+stages:
+  - test
+
+test-windows:
+  stage: test
+  tags:
+    - windows
+  script:
+    - echo "Windows Runner is working"
+    - systeminfo | findstr /C:"OS Name"
+
+test-ubuntu:
+  stage: test
+  tags:
+    - ubuntu
+  script:
+    - echo "Ubuntu Runner is working"
+    - uname -a
