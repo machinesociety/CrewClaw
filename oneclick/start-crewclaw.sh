@@ -42,9 +42,13 @@ install_docker() {
 
   install_packages ca-certificates curl gnupg lsb-release
   sudo install -m 0755 -d /etc/apt/keyrings
-  if [[ ! -f /etc/apt/keyrings/docker.gpg ]]; then
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-    sudo chmod a+r /etc/apt/keyrings/docker.gpg
+  local keyring="/etc/apt/keyrings/docker.gpg"
+  local tmp="/etc/apt/keyrings/docker.gpg.tmp"
+  if [[ ! -f "$keyring" ]] || ! sudo gpg --show-keys "$keyring" >/dev/null 2>&1; then
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o "$tmp"
+    sudo gpg --show-keys "$tmp" >/dev/null 2>&1
+    sudo mv -f "$tmp" "$keyring"
+    sudo chmod a+r "$keyring"
   fi
 
   local arch codename
