@@ -2,6 +2,10 @@
     wsl --update --web-download
 } catch {
 }
+try {
+    docker pull ghcr.io/openclaw/openclaw:latest 2>&1
+} catch {
+}
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     exit 1
@@ -10,127 +14,140 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
 # ----------------------------
 # 3. 下载工作台镜像
 # ----------------------------
-$imageDigest = "sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02"
 $finalTag = "ghcr.io/openclaw/openclaw:latest"
 
-# 定义国内镜像源列表
-$domesticMirrors = @(
-    "ghcr.nju.edu.cn/openclaw/openclaw"
-    "registry.docker-cn.com/openclaw/openclaw"
-    "docker.mirrors.ustc.edu.cn/openclaw/openclaw"
-    "hub-mirror.c.163.com/openclaw/openclaw"
-    "mirror.baidubce.com/openclaw/openclaw"
-)
-
-# 定义超时时间（40分钟）
-$timeoutMinutes = 40
-$timeoutMilliseconds = $timeoutMinutes * 60 * 1000  # 转换为毫秒
-
-# 带超时和重试的镜像下载函数
-function Download-ImageWithTimeout {
-    param(
-        [string]$mirror
-    )
-    
-    $maxRetries = 4
-    $retryCount = 0
-    
-    while ($retryCount -lt $maxRetries) {
-        Write-Host "尝试从镜像源下载: $mirror..." -ForegroundColor Cyan
-        Write-Host "尝试次数: $($retryCount + 1)/$maxRetries" -ForegroundColor Cyan
-        $startTime = Get-Date
-        Write-Host "开始时间: $startTime" -ForegroundColor Cyan
+# 获取最新版本的openclaw镜像的digest
+function Get-LatestOpenClawDigest {
+    Write-Host "正在获取最新版本的openclaw镜像信息..." -ForegroundColor Cyan
+    try {
+        # 方法1：尝试直接拉取latest标签，然后获取其digest
+        Write-Host "尝试拉取最新版本的openclaw镜像..." -ForegroundColor Cyan
+        # 直接执行docker pull命令，显示原始进度条
+        & docker pull ghcr.io/openclaw/openclaw:latest 2>&1
         
-        # 创建临时文件来存储输出
-        $tempFile = [System.IO.Path]::GetTempFileName()
-        
-        try {
-            # 创建一个新的PowerShell进程来执行docker pull命令
-            $process = Start-Process -FilePath "powershell.exe" -ArgumentList "-Command", "docker pull $mirror@$imageDigest 2>&1 | Out-File -FilePath '$tempFile' -Force" -PassThru -NoNewWindow
-            
-            # 等待进程完成或超时
-            $completed = $process.WaitForExit($timeoutMilliseconds)
-            
-            $endTime = Get-Date
-            $elapsedTime = $endTime - $startTime
-            Write-Host "结束时间: $endTime" -ForegroundColor Cyan
-            Write-Host "实际用时: $($elapsedTime.TotalMinutes.ToString('0.00')) 分钟" -ForegroundColor Cyan
-            
-            if (-not $completed) {
-                # 超时，终止进程
-                $process.Kill()
-                Write-Host "下载超时（超过 $timeoutMinutes 分钟），准备重试..." -ForegroundColor Yellow
-                $retryCount++
-                continue
-            }
-            
-            # 读取命令输出
-            $output = Get-Content -Path $tempFile -Raw
-            
-            # 显示命令输出
-            Write-Host $output
-            
-            # 检查命令执行结果
-            if ($process.ExitCode -eq 0 -or $output -match "Image is up to date") {
-                Write-Host "镜像下载成功" -ForegroundColor Green
-                return $true
-            } else {
-                Write-Host "镜像下载失败，准备重试..." -ForegroundColor Yellow
-                $retryCount++
-                continue
-            }
-        } catch {
-            Write-Host "下载过程中出现错误: $($_.Exception.Message)，准备重试..." -ForegroundColor Yellow
-            $retryCount++
-            continue
-        } finally {
-            # 清理临时文件
-            if (Test-Path $tempFile) {
-                Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
-            }
-        }
-    }
-    
-    Write-Host "已尝试 $maxRetries 次，仍然失败，切换到下一个镜像源..." -ForegroundColor Yellow
-    return $false
-}
-
-# 尝试使用国内镜像源
-$downloadSuccess = $false
-foreach ($mirror in $domesticMirrors) {
-    if (Download-ImageWithTimeout -mirror $mirror) {
-        # 下载成功，获取镜像ID并进行重命名
-        $imageId = docker images -q $mirror@$imageDigest
-        if ($imageId) {
-            $tagResult = docker tag $imageId $finalTag
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host "镜像重命名成功" -ForegroundColor Green
-                $downloadSuccess = $true
-                break
-            } else {
-                Write-Host "镜像重命名失败，继续尝试下一个镜像源..." -ForegroundColor Yellow
+        # 检查是否拉取成功
+        if ($LASTEXITCODE -eq 0) {
+            # 获取镜像的digest
+            $imageInfo = docker images ghcr.io/openclaw/openclaw:latest --format "{{.Digest}}"
+            if ($imageInfo) {
+                Write-Host "获取到最新版本的openclaw镜像digest: $imageInfo" -ForegroundColor Green
+                return $imageInfo
             }
         } else {
-            Write-Host "获取镜像ID失败，继续尝试下一个镜像源..." -ForegroundColor Yellow
+            Write-Host "拉取镜像时出错" -ForegroundColor Yellow
         }
+        
+        # 如果无法获取最新版本，使用默认的digest
+        Write-Host "无法获取最新版本的openclaw镜像信息，使用默认版本..." -ForegroundColor Yellow
+        return "sha256:a5a4c83b773aca8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02"
+    } catch {
+        Write-Host "获取镜像信息时出错: $($_.Exception.Message)，使用默认版本..." -ForegroundColor Red
+        return "sha256:a5a4c83b773aca8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02"
     }
 }
 
-# 如果所有国内镜像源都失败，尝试使用原始源
-if (-not $downloadSuccess) {
-    Write-Host "所有国内镜像源下载失败，尝试使用原始源..." -ForegroundColor Yellow
+# 更新文件中的镜像digest
+function Update-ImageDigest {
+    param(
+        [string]$digest
+    )
+    
+    Write-Host "更新文件中的镜像digest..." -ForegroundColor Cyan
+    
+    # 确保digest格式正确
+    $cleanDigest = $digest -replace '.*(sha256:[a-f0-9]+).*', '$1'
+    
+    # 更新docker-compose.yml文件
+    $dockerComposeFile = "infra\compose\docker-compose.yml"
+    if (Test-Path $dockerComposeFile) {
+        Write-Host "更新 $dockerComposeFile 文件..." -ForegroundColor Cyan
+        $content = Get-Content $dockerComposeFile -Raw
+        $newContent = $content -replace 'ghcr\.io/openclaw/openclaw@sha256:[a-f0-9]+', "ghcr.io/openclaw/openclaw@$cleanDigest"
+        Set-Content $dockerComposeFile -Value $newContent
+        Write-Host "$dockerComposeFile 文件更新成功" -ForegroundColor Green
+    } else {
+        Write-Host "$dockerComposeFile 文件不存在" -ForegroundColor Red
+    }
+    
+    # 更新settings.py文件
+    $settingsFile = "services\runtime-manager\app\core\settings.py"
+    if (Test-Path $settingsFile) {
+        Write-Host "更新 $settingsFile 文件..." -ForegroundColor Cyan
+        $content = Get-Content $settingsFile -Raw
+        # 替换任何格式的镜像引用，包括错误的格式
+        $newContent = $content -replace 'ghcr\.io/openclaw/openclaw@sha256:[a-f0-9]+', "ghcr.io/openclaw/openclaw@$cleanDigest"
+        Set-Content $settingsFile -Value $newContent
+        Write-Host "$settingsFile 文件更新成功" -ForegroundColor Green
+    } else {
+        Write-Host "$settingsFile 文件不存在" -ForegroundColor Red
+    }
+}
+
+# 重新构建docker服务
+function Rebuild-DockerServices {
+    Write-Host "重新构建docker服务..." -ForegroundColor Cyan
+    
     try {
-        if (Download-ImageWithTimeout -mirror "ghcr.io/openclaw/openclaw") {
-            # 获取镜像ID并创建latest标签
-            $imageId = docker images -q ghcr.io/openclaw/openclaw@$imageDigest
-            if ($imageId) {
-                $finalTag = "ghcr.io/openclaw/openclaw:latest"
-                docker tag $imageId $finalTag 2>$null
-                $downloadSuccess = $true
-            }
-        }
+        # 切换到compose目录
+        $composeDir = "infra\compose"
+        Set-Location $composeDir
+        
+        # 停止并移除旧容器
+        Write-Host "停止并移除旧容器..." -ForegroundColor Cyan
+        & docker compose down
+        
+        # 确保使用最新版本的镜像
+        Write-Host "确保使用最新版本的镜像..." -ForegroundColor Cyan
+        & docker pull ghcr.io/openclaw/openclaw:latest
+        
+        # 构建并启动新容器
+        Write-Host "构建并启动新容器..." -ForegroundColor Cyan
+        & docker compose up -d --build
+        
+        # 切换回项目根目录
+        Set-Location ..\..
+        
+        Write-Host "Docker服务重新构建成功，使用的是最新版本的镜像" -ForegroundColor Green
     } catch {
-        Write-Host "原始源下载失败" -ForegroundColor Red
+        Write-Host "重新构建Docker服务时出错: $($_.Exception.Message)" -ForegroundColor Red
+        # 确保切换回项目根目录
+        Set-Location ..\.. -ErrorAction SilentlyContinue
+    }
+}
+
+# 获取最新版本的镜像digest
+$imageDigest = Get-LatestOpenClawDigest
+
+# 定义尝试次数
+$maxAttempts = 4
+
+# 尝试使用原始源下载
+$downloadSuccess = $false
+Write-Host "尝试使用原始源下载..." -ForegroundColor Cyan
+
+for ($i = 1; $i -le $maxAttempts; $i++) {
+    Write-Host "尝试次数: $i/$maxAttempts" -ForegroundColor Cyan
+    $startTime = Get-Date
+    Write-Host "开始时间: $startTime" -ForegroundColor Cyan
+    
+    # 直接执行docker pull命令
+    & docker pull ghcr.io/openclaw/openclaw:latest 2>&1
+    
+    # 检查命令执行结果
+    if ($LASTEXITCODE -eq 0) {
+        $endTime = Get-Date
+        $elapsedTime = $endTime - $startTime
+        Write-Host "结束时间: $endTime" -ForegroundColor Cyan
+        Write-Host "实际用时: $($elapsedTime.TotalMinutes.ToString('0.00')) 分钟" -ForegroundColor Cyan
+        Write-Host "镜像下载成功" -ForegroundColor Green
+        $downloadSuccess = $true
+        break
+    } else {
+        $endTime = Get-Date
+        $elapsedTime = $endTime - $startTime
+        Write-Host "结束时间: $endTime" -ForegroundColor Cyan
+        Write-Host "实际用时: $($elapsedTime.TotalMinutes.ToString('0.00')) 分钟" -ForegroundColor Cyan
+        Write-Host "镜像下载失败，准备重试..." -ForegroundColor Yellow
     }
 }
 
@@ -141,6 +158,12 @@ if (-not $downloadSuccess) {
     Write-Host "Docker 配置文件位置：C:\ProgramData\Docker\config\daemon.json" -ForegroundColor Yellow
     Write-Host "添加以下内容：" -ForegroundColor Yellow
     Write-Host '{"registry-mirrors": ["https://docker.mirrors.ustc.edu.cn", "https://hub-mirror.c.163.com", "https://mirror.baidubce.com"]}' -ForegroundColor Yellow
+} else {
+    # 更新文件中的镜像digest
+    Update-ImageDigest -digest $imageDigest
+    
+    # 重新构建docker服务
+    Rebuild-DockerServices
 }
 
 
@@ -193,25 +216,6 @@ try {
         }
     }
 } catch {
-}
-
-# ----------------------------
-# 5. 启动服务
-# ----------------------------
-try {
-    # 切换到 compose 目录执行命令
-    $composeDir = "infra\compose"
-    Set-Location $composeDir
-    
-    # 执行启动命令
-    docker compose up -d
-    
-    # 切换回项目根目录
-    Set-Location ..\..
-} catch {
-    # 确保切换回项目根目录
-    Set-Location ..\.. -ErrorAction SilentlyContinue
-    exit 1
 }
 
 # ----------------------------

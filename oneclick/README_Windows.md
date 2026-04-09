@@ -9,7 +9,7 @@
    ```
 3. 运行启动脚本：
    ```powershell
-   .\oneclick\start-crewclaw.ps1
+   powershell -ExecutionPolicy Bypass -File .\oneclick\start-crewclaw.ps1
    ```
 
 ## 脚本做了什么
