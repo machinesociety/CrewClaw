@@ -60,7 +60,13 @@ function FileBrowserContent() {
       const res = await fetch(`/api/v1/files/list?path=${encodeURIComponent(path)}`, {
         credentials: 'include',
       });
-      if (!res.ok) throw new Error('Failed to load files');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        if (errorData.detail && errorData.detail.includes('No container available')) {
+          throw new Error('工作区未启动，请先启动工作区再访问文件管理');
+        }
+        throw new Error('Failed to load files');
+      }
       const data = await res.json();
       setFiles(data.files || []);
     } catch (e) {
@@ -202,7 +208,7 @@ function FileBrowserContent() {
   return (
     <div className="page-enter">
       <PageHeader
-        title="文件浏览器"
+        title="文件管理"
         description="管理容器内的文件"
         actions={
           <div className="flex items-center gap-2">
