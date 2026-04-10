@@ -2,12 +2,26 @@
     wsl --update --web-download
 } catch {
 }
+
+# 检查Docker是否可用
+Write-Host "正在检查 Docker 是否可用..." -ForegroundColor Cyan
 try {
-    docker pull ghcr.io/openclaw/openclaw:latest 2>&1
+    $dockerInfo = docker info 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Docker 连接失败"
+    }
+    Write-Host "Docker 连接成功" -ForegroundColor Green
 } catch {
+    Write-Host "无法连接到 Docker，请检查 Docker Desktop 是否已启动" -ForegroundColor Red
+    Write-Host "请按以下步骤操作：" -ForegroundColor Yellow
+    Write-Host "1. 打开 Docker Desktop" -ForegroundColor Yellow
+    Write-Host "2. 等待 Docker Desktop 完全启动（状态栏显示 Docker is running）" -ForegroundColor Yellow
+    Write-Host "3. 重新运行此脚本" -ForegroundColor Yellow
+    exit 1
 }
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+    Write-Host "未找到 Docker 命令，请确保 Docker Desktop 已正确安装" -ForegroundColor Red
     exit 1
 }
 
@@ -75,7 +89,8 @@ function Update-ImageDigest {
         Write-Host "更新 $settingsFile 文件..." -ForegroundColor Cyan
         $content = Get-Content $settingsFile -Raw
         # 替换任何格式的镜像引用，包括错误的格式
-        $newContent = $content -replace 'ghcr\.io/openclaw/openclaw@sha256:[a-f0-9]+', "ghcr.io/openclaw/openclaw@$cleanDigest"
+        $replacement = 'runtime_openclaw_image_ref: str = (\n        "ghcr.io/openclaw/openclaw@' + $cleanDigest + '"\n    )'
+        $newContent = $content -replace 'runtime_openclaw_image_ref: str = \([^)]+\)', $replacement
         Set-Content $settingsFile -Value $newContent
         Write-Host "$settingsFile 文件更新成功" -ForegroundColor Green
     } else {
@@ -153,11 +168,26 @@ for ($i = 1; $i -le $maxAttempts; $i++) {
 
 # 如果所有镜像源都失败
 if (-not $downloadSuccess) {
-    Write-Host "镜像下载失败，请手动下载镜像" -ForegroundColor Red
-    Write-Host "建议：修改 Docker 配置文件，添加国内镜像源" -ForegroundColor Yellow
-    Write-Host "Docker 配置文件位置：C:\ProgramData\Docker\config\daemon.json" -ForegroundColor Yellow
-    Write-Host "添加以下内容：" -ForegroundColor Yellow
-    Write-Host '{"registry-mirrors": ["https://docker.mirrors.ustc.edu.cn", "https://hub-mirror.c.163.com", "https://mirror.baidubce.com"]}' -ForegroundColor Yellow
+    Write-Host "镜像下载失败，退出脚本" -ForegroundColor Red
+    Write-Host "请在 Docker Desktop 的设置中修改 Docker Engine 配置：" -ForegroundColor Yellow
+    Write-Host "1. 打开 Docker Desktop"
+    Write-Host "2. 点击 Settings"
+    Write-Host "3. 点击 Docker Engine"
+    Write-Host "4. 将配置修改为：" -ForegroundColor Yellow
+    Write-Host '{
+  "builder": {
+    "gc": {
+      "defaultKeepStorage": "20GB",
+      "enabled": true
+    }
+  },
+  "experimental": false,
+  "registry-mirrors": [
+    "https://docker.m.daocloud.io"
+  ]
+}' -ForegroundColor Yellow
+    Write-Host "5. 点击 Apply & Restart" -ForegroundColor Yellow
+    exit 1
 } else {
     # 更新文件中的镜像digest
     Update-ImageDigest -digest $imageDigest
@@ -218,23 +248,6 @@ try {
 } catch {
 }
 
-# ----------------------------
-# 6. 显示服务状态
-# ----------------------------
-try {
-    # 切换到 compose 目录执行命令
-    $composeDir = "infra\compose"
-    Set-Location $composeDir
-    
-    # 执行状态检查命令
-    docker compose ps
-    
-    # 切换回项目根目录
-    Set-Location ..\..
-} catch {
-    # 确保切换回项目根目录
-    Set-Location ..\.. -ErrorAction SilentlyContinue
-}
 
 # ----------------------------
 # 7. 自动打开浏览器
