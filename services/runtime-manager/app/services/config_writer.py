@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 
 from app.core.errors import RuntimeManagerError
-from app.services.skill_paths import skills_export_dir, skills_public_dir, skills_user_dir
+from app.services.skill_paths import public_files_dir, skills_export_dir, skills_public_dir, skills_user_dir
 
 
 # Check if running on Windows
@@ -72,6 +72,9 @@ def prepare_skill_dirs(user_id: str) -> None:
     if user_path != public_path:
         _prepare_dir(user_path)
         _apply_recursive_permissions(user_path)
+    files_path = public_files_dir()
+    _prepare_dir(files_path)
+    _apply_recursive_permissions(files_path)
     export_path = skills_export_dir(user_id)
     _prepare_dir(export_path)
     _apply_recursive_permissions(export_path)

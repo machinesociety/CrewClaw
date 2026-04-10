@@ -3,12 +3,26 @@ from __future__ import annotations
 from pathlib import Path
 
 
+def public_root_dir() -> Path:
+    return Path("/var/lib/clawloops/shared/public")
+
+
 def skills_root_dir() -> Path:
+    new_root = public_root_dir() / "skills"
+    if new_root.exists() or public_root_dir().exists():
+        return new_root
     return Path("/var/lib/clawloops/shared/skills")
 
 
+def public_files_dir() -> Path:
+    return public_root_dir() / "files"
+
+
 def skills_public_dir() -> Path:
-    return skills_root_dir() / "public"
+    root = skills_root_dir()
+    if root.name == "skills" and root.parent.name == "public":
+        return root
+    return root / "public"
 
 
 def skills_user_dir(user_id: str) -> Path:

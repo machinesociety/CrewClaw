@@ -102,3 +102,33 @@ def write_skill_file(scope: str, user_id: str | None, name: str, data: bytes) ->
 
     st = target.stat()
     return SkillFile(name=skill_id, size=st.st_size, modifiedAt=st.st_mtime)
+
+
+def write_skill_file_with_overwrite(scope: str, user_id: str | None, name: str, data: bytes, overwrite: bool) -> SkillFile:
+    skill_id = _require_safe_skill_id(name)
+    root = _resolve_target_dir(scope, user_id)
+    root.mkdir(parents=True, exist_ok=True)
+    root_real = root.resolve()
+    skill_dir = (root / skill_id).resolve()
+    if root_real not in skill_dir.parents and skill_dir != root_real:
+        raise RuntimeManagerError("SKILL_INVALID_NAME", "invalid skill name", 400)
+    if skill_dir.exists() and not overwrite:
+        raise RuntimeManagerError("SKILL_ALREADY_EXISTS", "skill already exists", 409)
+    return write_skill_file(scope=scope, user_id=user_id, name=skill_id, data=data)
+
+
+def delete_skill(scope: str, user_id: str | None, name: str) -> None:
+    skill_id = _require_safe_skill_id(name)
+    root = _resolve_target_dir(scope, user_id)
+    root_real = root.resolve()
+    skill_dir = (root / skill_id).resolve()
+    if root_real not in skill_dir.parents and skill_dir != root_real:
+        raise RuntimeManagerError("SKILL_INVALID_NAME", "invalid skill name", 400)
+    if not skill_dir.exists() or not skill_dir.is_dir():
+        raise RuntimeManagerError("SKILL_NOT_FOUND", "skill not found", 404)
+    for p in sorted(skill_dir.rglob("*"), reverse=True):
+        if p.is_file() or p.is_symlink():
+            p.unlink()
+        elif p.is_dir():
+            p.rmdir()
+    skill_dir.rmdir()
