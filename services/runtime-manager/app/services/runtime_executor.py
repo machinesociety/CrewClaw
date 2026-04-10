@@ -42,7 +42,26 @@ class RuntimeExecutor:
         host_port = bindings[0].get("HostPort")
         if not host_port:
             return None
-        return f"http://{self._settings.runtime_public_host}:{host_port}"
+        
+        # 尝试从容器中读取 OpenClaw 配置文件，获取认证令牌
+        browser_url = f"http://{self._settings.runtime_public_host}:{host_port}"
+        try:
+            # 读取容器中的 openclaw.json 配置文件
+            result = container.exec_run(['cat', '/home/node/.openclaw/openclaw.json'], user='node')
+            if result.exit_code == 0:
+                import json
+                config_content = result.output.decode()
+                config = json.loads(config_content)
+                # 提取网关认证令牌
+                gateway_token = config.get('gateway', {}).get('auth', {}).get('token')
+                if gateway_token:
+                    # 将令牌添加到 URL 中
+                    browser_url = f"{browser_url}/chat?session=main#token={gateway_token}"
+        except Exception as e:
+            # 如果读取配置文件失败，使用不带令牌的 URL
+            logger.error(f"Failed to read openclaw config: {e}")
+        
+        return browser_url
 
     def _list_managed(self, runtime_id: str):
         return self._docker.containers.list(
@@ -123,6 +142,25 @@ class RuntimeExecutor:
             logger.info(f"Config dir: {req.compat.openclawConfigDir}")
             logger.info(f"Workspace dir: {req.compat.openclawWorkspaceDir}")
             
+            # 确保本地存储目录存在
+            import os
+            local_storage = f"D:\\ClawLoops\\user-files\\{req.userId}"
+            os.makedirs(local_storage, exist_ok=True)
+            
+            # 更新工作区目录为本地存储
+            local_workspace = f"{local_storage}\\workspace"
+            os.makedirs(local_workspace, exist_ok=True)
+            
+            # 更新配置目录为本地存储
+            local_config = f"{local_storage}\\openclaw-config"
+            os.makedirs(local_config, exist_ok=True)
+            
+            # 更新req.compat中的路径
+            req.compat.openclawConfigDir = local_config
+            req.compat.openclawWorkspaceDir = local_workspace
+            
+            logger.info(f"Updated storage to local: {local_storage}")
+            
             prepare_runtime_dirs(req.compat.openclawConfigDir, req.compat.openclawWorkspaceDir)
             logger.info("Prepared runtime dirs")
             
@@ -150,7 +188,33 @@ class RuntimeExecutor:
                 # 如果容器已停止，直接启动它
                 if container.status in {"exited", "created"}:
                     logger.info("Starting existing stopped container")
-                    container.start()
+                    try:
+                        container.start()
+                    except Exception as e:
+                        # 如果启动失败，检查是否是网络问题
+                        if "network" in str(e) and "not found" in str(e):
+                            logger.info(f"Network not found, recreating network: {self._settings.runtime_openclaw_network}")
+                            # 尝试创建网络
+                            try:
+                                # 先检查网络是否存在
+                                network = self._docker.networks.get(self._settings.runtime_openclaw_network)
+                                logger.info(f"Network already exists: {self._settings.runtime_openclaw_network}")
+                            except:
+                                # 创建网络
+                                network = self._docker.networks.create(
+                                    self._settings.runtime_openclaw_network,
+                                    driver="bridge"
+                                )
+                                logger.info(f"Created network: {self._settings.runtime_openclaw_network}")
+                            
+                            # 连接容器到网络
+                            alias = f"rt-{req.runtimeId}"
+                            network.connect(container, aliases=[alias])
+                            logger.info(f"Connected container to network: {self._settings.runtime_openclaw_network}")
+                            
+                            # 再次尝试启动容器
+                            container.start()
+                    
                     container.reload()
                     
                     if container.status != "running":
@@ -245,16 +309,14 @@ class RuntimeExecutor:
             if container is not None:
                 container.remove(force=True)
             if req.retentionPolicy == "wipe_workspace" and req.compat is not None:
-                roots = {Path(req.compat.openclawConfigDir), Path(req.compat.openclawWorkspaceDir)}
-                dedup: list[Path] = []
-                for p in roots:
-                    if any(parent in p.parents for parent in dedup):
-                        continue
-                    dedup = [x for x in dedup if p not in x.parents]
-                    dedup.append(p)
-                for path in dedup:
-                    if path.exists():
-                        shutil.rmtree(path)
+                # 本地存储路径
+                import os
+                local_storage = f"D:\\ClawLoops\\user-files\\{req.userId}"
+                
+                # 删除本地存储目录
+                if os.path.exists(local_storage):
+                    shutil.rmtree(local_storage)
+                    logger.info(f"Deleted local storage: {local_storage}")
             return ContainerStateResponse(runtimeId=req.runtimeId, observedState="deleted", message="deleted")
         except RuntimeManagerError:
             raise
