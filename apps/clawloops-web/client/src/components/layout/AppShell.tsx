@@ -46,7 +46,7 @@ interface NavItem {
 const userNavItems: NavItem[] = [
   { label: '工作台', href: '/app', icon: LayoutDashboard },
   { label: '工作区入口', href: '/workspace-entry', icon: ExternalLink },
-  { label: '文件浏览器', href: '/file-browser', icon: FolderOpen },
+  { label: '文件管理', href: '/file-browser', icon: FolderOpen },
 ];
 
 const adminNavItems: NavItem[] = [
@@ -55,6 +55,7 @@ const adminNavItems: NavItem[] = [
   { label: '邀请管理', href: '/admin/invitations', icon: Mail },
   { label: '模型治理', href: '/admin/models', icon: Cpu },
   { label: 'Provider 凭据', href: '/admin/provider-credentials', icon: Key },
+  { label: '用户文件管理', href: '/admin/user-files', icon: FolderOpen },
   { label: 'Usage 汇总', href: '/admin/usage', icon: BarChart3 },
 ];
 

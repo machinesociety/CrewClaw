@@ -59,6 +59,7 @@ import AdminInvitationDetailPage from './pages/admin/AdminInvitationDetail';
 import AdminModelsPage from './pages/admin/AdminModels';
 import AdminCredentialsPage from './pages/admin/AdminCredentials';
 import AdminUsagePage from './pages/admin/AdminUsage';
+import UserFileManagementPage from './pages/UserFileManagement';
 
 // Error pages
 import {
@@ -94,6 +95,8 @@ function Router() {
       <Route path="/admin/models" component={AdminModelsPage} />
       <Route path="/admin/provider-credentials" component={AdminCredentialsPage} />
       <Route path="/admin/usage" component={AdminUsagePage} />
+      <Route path="/admin/user-files" component={UserFileManagementPage} />
+      <Route path="/admin/user-files/:username" component={UserFileManagementPage} />
 
       {/* System error routes (v0.5 renamed) */}
       <Route path="/403" component={ForbiddenPage} />

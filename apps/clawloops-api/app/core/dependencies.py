@@ -24,6 +24,7 @@ from app.services.runtime_service import (
     UserRuntimeBindingServiceAdapter,
 )
 from app.services.user_service import UserService
+from app.services.user_file_service import UserFileService, FileStorageManager
 
 
 _user_repo_singleton: UserRepository | None = None
@@ -109,6 +110,13 @@ def require_active_user(ctx: AuthContext = Depends(get_auth_context)) -> AuthCon
         raise UserDisabledError()
     if ctx.mustChangePassword:
         raise PasswordChangeRequiredError()
+    return ctx
+
+
+def require_admin_user(ctx: AuthContext = Depends(require_active_user)) -> AuthContext:
+    if not ctx.isAdmin:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="Admin access required")
     return ctx
 
 
@@ -221,4 +229,12 @@ def get_runtime_service(
         config_renderer=renderer,
         route_host_suffix=settings.route_host_suffix,
     )
+
+
+def get_user_file_service() -> UserFileService:
+    """
+    提供用户文件管理服务
+    """
+    storage_manager = FileStorageManager()
+    return UserFileService(storage_manager=storage_manager)
 

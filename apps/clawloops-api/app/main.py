@@ -10,6 +10,7 @@ from app.api.v1 import models as models_api
 from app.api.v1 import runtime as runtime_api
 from app.api.v1 import usage as usage_api
 from app.api.v1 import users as users_api
+from app.api.v1 import user_files as user_files_api
 from app.api.v1 import workspace as workspace_api
 from app.core.errors import AppError
 from app.core.logging import setup_logging
@@ -56,6 +57,7 @@ def create_app() -> FastAPI:
     app.include_router(usage_api.router, prefix="/api/v1")
     app.include_router(workspace_api.router, prefix="/api/v1")
     app.include_router(files_api.router, prefix="/api/v1")
+    app.include_router(user_files_api.router, prefix="/api/v1")
     app.include_router(admin_api.router, prefix="/api/v1")
     app.include_router(internal_api.router)
 

@@ -35,6 +35,8 @@ services:
       - CLAWLOOPS_LITELLM_API_KEY=${LITELLM_MASTER_KEY:-sk-local-master}
       - CLAWLOOPS_MODEL_GATEWAY_BASE_URL=${CLAWLOOPS_MODEL_GATEWAY_BASE_URL:-http://litellm:4000}
       - CLAWLOOPS_MODEL_GATEWAY_DEFAULT_MODELS=${CLAWLOOPS_MODEL_GATEWAY_DEFAULT_MODELS:-qwen-max-proxy}
+    volumes:
+      - ../../user-files:/app/user-files
     labels:
       - traefik.enable=true
       - traefik.http.routers.clawloops_api.rule=Host(`${CLAWLOOPS_DOMAIN}`) && PathPrefix(`/api`)
@@ -93,7 +95,7 @@ services:
   prewarm-openclaw:
     profiles:
       - prewarm
-    image: "ghcr.io/openclaw/openclaw@sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02"
+    image: "ghcr.io/openclaw/openclaw@latest: Pulling from openclaw/openclaw Digest: sha256:d65cc3d5fd0c8b1f752c2f70377843230112250c10e99c3b61769234c217c5db Status: Image is up to date for ghcr.io/openclaw/openclaw:latest ghcr.io/openclaw/openclaw:latest sha256:d65cc3d5fd0c8b1f752c2f70377843230112250c10e99c3b61769234c217c5db"
 
   prewarm-litellm:
     profiles:
