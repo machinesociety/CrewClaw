@@ -50,7 +50,6 @@ import {
   Square,
   Trash2,
   ExternalLink,
-  Sparkles,
   Loader2,
   RefreshCw,
   Cpu,
@@ -180,7 +179,6 @@ interface RuntimeCardProps {
   onStop: () => void;
   onDelete: () => void;
   onOpenWorkspace: () => void;
-  onOpenSkills: () => void;
   onRefresh: () => void;
   actionInProgress: string | null;
 }
@@ -194,7 +192,6 @@ function RuntimeCard({
   onStop,
   onDelete,
   onOpenWorkspace,
-  onOpenSkills,
   onRefresh,
   actionInProgress,
 }: RuntimeCardProps) {
@@ -326,16 +323,6 @@ function RuntimeCard({
               >
                 <ExternalLink className="w-3.5 h-3.5" />
                 进入工作区
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5"
-                onClick={onOpenSkills}
-                disabled={!canOpen}
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                Skills
               </Button>
             </div>
           </>
@@ -652,23 +639,6 @@ function DashboardContent() {
     }
   };
 
-  const handleOpenSkills = async () => {
-    try {
-      const entry = await workspaceApi.entry();
-      if (entry.ready && entry.browserUrl) {
-        window.open('/api/v1/workspace-entry/redirect?path=/skills', '_blank');
-      } else {
-        navigate('/workspace-entry');
-      }
-    } catch (e) {
-      if (isAppError(e)) {
-        toast.error(`无法打开 Skills: ${e.message}`);
-      } else {
-        navigate('/workspace-entry');
-      }
-    }
-  };
-
   return (
     <div className="page-enter">
       <PageHeader
@@ -703,7 +673,6 @@ function DashboardContent() {
           onStop={handleStop}
           onDelete={() => setDeleteDialogOpen(true)}
           onOpenWorkspace={handleOpenWorkspace}
-          onOpenSkills={handleOpenSkills}
           onRefresh={loadRuntimeStatus}
           actionInProgress={actionInProgress}
         />
