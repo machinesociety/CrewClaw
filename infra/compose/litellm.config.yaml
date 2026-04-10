@@ -1,7 +1,7 @@
 model_list:
-  - model_name: qwen-max-proxy
+  - model_name: qwen3.6-plus-2026-04-02
     litellm_params:
-      model: dashscope/qwen3.5-plus
+      model: dashscope/qwen3.6-plus-2026-04-02
       api_key: os.environ/DASHSCOPE_API_KEY
       api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
 

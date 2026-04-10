@@ -112,9 +112,18 @@ class RuntimeExecutor:
                 500,
             ) from e
         
+        # 修改启动命令，确保包含 --allow-unconfigured 参数，这样 OpenClaw 容器就不会因为配置文件不符合要求而生成新的配置文件
+        command_parts = self._settings.runtime_openclaw_command.split(" ")
+        # 确保命令包含 --allow-unconfigured 参数
+        if "--allow-unconfigured" not in command_parts:
+            command_parts.append("--allow-unconfigured")
+        # 确保命令包含正确的参数
+        command_parts = [part for part in command_parts if part]
+        logger.info(f"Using command: {command_parts}")
+        
         container = self._docker.containers.create(
             image=self._settings.runtime_openclaw_image_ref,
-            command=self._settings.runtime_openclaw_command.split(" "),
+            command=command_parts,
             labels=labels,
             environment={
                 "HOME": "/home/node",
@@ -144,15 +153,16 @@ class RuntimeExecutor:
             
             # 确保本地存储目录存在
             import os
-            local_storage = f"D:\\ClawLoops\\user-files\\{req.userId}"
+            # 使用Docker容器内的路径，而不是硬编码的Windows路径
+            local_storage = f"/var/lib/clawloops/user-files/{req.userId}"
             os.makedirs(local_storage, exist_ok=True)
             
             # 更新工作区目录为本地存储
-            local_workspace = f"{local_storage}\\workspace"
+            local_workspace = f"{local_storage}/workspace"
             os.makedirs(local_workspace, exist_ok=True)
             
             # 更新配置目录为本地存储
-            local_config = f"{local_storage}\\openclaw-config"
+            local_config = f"{local_storage}/openclaw-config"
             os.makedirs(local_config, exist_ok=True)
             
             # 更新req.compat中的路径
@@ -163,7 +173,6 @@ class RuntimeExecutor:
             
             prepare_runtime_dirs(req.compat.openclawConfigDir, req.compat.openclawWorkspaceDir)
             logger.info("Prepared runtime dirs")
-            
             write_openclaw_config(req.compat.openclawConfigDir, req.renderedConfig.openclawJson)
             logger.info("Wrote openclaw config")
 
@@ -185,48 +194,39 @@ class RuntimeExecutor:
                 container.reload()
                 logger.info(f"Found existing container: {container.id}, status: {container.status}")
                 
-                # 如果容器已停止，直接启动它
-                if container.status in {"exited", "created"}:
-                    logger.info("Starting existing stopped container")
-                    try:
-                        container.start()
-                    except Exception as e:
-                        # 如果启动失败，检查是否是网络问题
-                        if "network" in str(e) and "not found" in str(e):
-                            logger.info(f"Network not found, recreating network: {self._settings.runtime_openclaw_network}")
-                            # 尝试创建网络
-                            try:
-                                # 先检查网络是否存在
-                                network = self._docker.networks.get(self._settings.runtime_openclaw_network)
-                                logger.info(f"Network already exists: {self._settings.runtime_openclaw_network}")
-                            except:
-                                # 创建网络
-                                network = self._docker.networks.create(
-                                    self._settings.runtime_openclaw_network,
-                                    driver="bridge"
-                                )
-                                logger.info(f"Created network: {self._settings.runtime_openclaw_network}")
-                            
-                            # 连接容器到网络
-                            alias = f"rt-{req.runtimeId}"
-                            network.connect(container, aliases=[alias])
-                            logger.info(f"Connected container to network: {self._settings.runtime_openclaw_network}")
-                            
-                            # 再次尝试启动容器
-                            container.start()
-                    
+                # 启动容器
+                logger.info("Starting container with updated config")
+                try:
+                    logger.info(f"Container ID: {container.id}")
+                    logger.info(f"Container status before start: {container.status}")
+                    container.start()
                     container.reload()
-                    
-                    if container.status != "running":
-                        logger.error(f"Failed to start existing container, status: {container.status}")
-                        raise RuntimeManagerError("RUNTIME_START_FAILED", "failed to start existing container", 500)
-                elif container.status == "running":
-                    logger.info("Container is already running")
-                else:
-                    # 如果容器处于其他状态（如 restarting, paused, dead），删除并重建
-                    logger.info(f"Container in unexpected state: {container.status}, removing and recreating")
-                    container.remove(force=True)
-                    container = None
+                    logger.info(f"Container status after start: {container.status}")
+                    # 检查容器日志，看看是否有错误
+                    logs = container.logs(tail=100).decode()
+                    logger.info(f"Container logs: {logs}")
+                except Exception as e:
+                    logger.error(f"Failed to start container: {e}")
+                    # 如果启动失败，检查是否是网络问题
+                    if "network" in str(e) and "not found" in str(e):
+                        logger.info(f"Network not found, recreating network: {self._settings.runtime_openclaw_network}")
+                        # 尝试创建网络
+                        try:
+                            # 先检查网络是否存在
+                            network = self._docker.networks.get(self._settings.runtime_openclaw_network)
+                            logger.info(f"Network already exists: {self._settings.runtime_openclaw_network}")
+                        except:
+                            # 创建网络
+                            network = self._docker.networks.create(
+                                self._settings.runtime_openclaw_network,
+                                driver="bridge"
+                            )
+                            logger.info(f"Created network: {self._settings.runtime_openclaw_network}")
+                        
+                        # 连接容器到网络
+                        alias = f"rt-{req.runtimeId}"
+                        network.connect(container, aliases=[alias])
+                        logger.info(f"Connected container to network: {self._settings.runtime_openclaw_network}")
             
             # 如果没有现有容器或已删除，则创建新容器
             if container is None:
@@ -311,7 +311,7 @@ class RuntimeExecutor:
             if req.retentionPolicy == "wipe_workspace" and req.compat is not None:
                 # 本地存储路径
                 import os
-                local_storage = f"D:\\ClawLoops\\user-files\\{req.userId}"
+                local_storage = f"/var/lib/clawloops/user-files/{req.userId}"
                 
                 # 删除本地存储目录
                 if os.path.exists(local_storage):
