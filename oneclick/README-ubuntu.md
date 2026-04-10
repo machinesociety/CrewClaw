@@ -1,6 +1,30 @@
-# CrewClaw 一键启动（Ubuntu）
+# CrewClaw 一键启动，执行命令后直接躺平等启动！（Ubuntu）
 
 ## 用法
+
+## 镜像问题
+- 如果是国内，没有挂载VPN，则需要在执行一键启动命令前，置国内镜像加速器：
+```bash
+sudo mkdir -p /etc/docker
+sudo tee /etc/docker/daemon.json > /dev/null <<EOF
+{
+  "registry-mirrors": [
+    "https://dockerpull.com",
+    "https://docker.anyhub.us.kg",
+    "https://docker.m.daocloud.io",
+    "https://docker.1panel.live"
+  ]
+}
+EOF
+```
+
+- 使用官方安装脚本库 + 阿里云镜像一键安装 Docker
+```bash
+curl -fsSL https://get.docker.com | bash -s docker --mirror Aliyun
+```
+
+
+## 做完上述操作后，即可执行下面A或B方式的一键启动命令，国内一般第一次下载配置等执行会很慢！
 
 ### 方式 A：在仓库根目录执行（推荐），其中 /path/to/CrewClaw 表示你的仓库根目录路径。
 
@@ -20,7 +44,7 @@ bash /path/to/CrewClaw/oneclick/start-crewclaw.sh /path/to/CrewClaw
 - 操作系统：Ubuntu（脚本在 Ubuntu 22.04/24.04 这类常见版本下最稳；其他 Debian 系也许可用但不保证）。
 - 网络要求：
   - 能访问 `download.docker.com`（安装 Docker APT 源与包）
-  - 能访问 `deb.debian.org`/`pypi.org`（构建镜像依赖，除非你改成内网镜像源）
+  - 能访问 `deb.debian.org`/`pypi.org`（构建镜像依赖）。若出现 `pip ... Read timed out`，建议把 `infra/compose/.env` 里的 `API_PIP_INDEX_URL` / `RUNTIME_MANAGER_PIP_INDEX_URL` 改为可用的镜像源（如公司内网 PyPI 镜像、或国内镜像），再重新运行脚本。
   - 使用 `nip.io` 作为域名时，需能解析 `*.nip.io`
 - 权限要求：需要 `sudo` 权限（安装包、写入 `/etc/apt/*`、启动 Docker）。
 - 端口占用：
@@ -46,6 +70,35 @@ bash /path/to/CrewClaw/oneclick/start-crewclaw.sh /path/to/CrewClaw
 - 执行 `docker compose up -d --build` 拉起服务。
 
 ## 常见问题与排错
+
+
+### 1) 不要盲目的自行安装docker + docker-compose
+
+脚本会自动检测并安装 Docker + Docker Compose plugin（Ubuntu），无需手动安装。
+如果自行安装了，请卸载：
+1、停止 Docker 服务：
+```bash
+  sudo systemctl stop docker
+  sudo systemctl stop docker.socket
+  sudo systemctl stop containerd
+```
+2、卸载 Docker：
+```bash
+sudo apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin docker-ce-rootless-extras
+```
+3、清理残留：
+```bash
+sudo apt-get autoremove -y
+```
+4、删除 Docker 的残留：
+```bash
+sudo rm -rf /var/lib/docker
+sudo rm -rf /var/lib/containerd
+sudo rm -rf /etc/docker
+```
+
+
+### 2) 手动安装后，脚本会提示失败，提示“请先卸载已安装的 Docker + Docker Compose”
 
 ### 1) 安装 Docker 时提示 NO\_PUBKEY / GPG 错误
 
@@ -85,8 +138,20 @@ docker ps -a --filter label=clawloops.managed=true
 docker rm -f <容器ID>
 ```
 
+### 5) 构建 clawloops-api 时 pip 超时（Read timed out）
+
+现象示例：`ReadTimeoutError ... files.pythonhosted.org ... Read timed out`。通常是目标机器到 PyPI 的下载链路不稳定（即使 `PIP_INDEX_URL=pypi.org`，实际包文件也会从 `files.pythonhosted.org` 拉取）。
+
+处理方式（推荐）：在 `infra/compose/.env` 配置 PyPI 镜像源后重试：
+
+```bash
+API_PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+RUNTIME_MANAGER_PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+然后重新执行脚本或直接 `docker compose build clawloops-api` 重试。
+
 ## 重要说明（安全）
 
 - 你必须在 `infra/compose/.env` 里填好 `DASHSCOPE_API_KEY`，否则 LiteLLM 调用 DashScope 会返回 500。
 - 不要把真实 API Key（例如 DashScope/OpenAI/Anthropic）提交到仓库；建议只在部署机的 `.env` 里配置，并限制文件权限。
-
