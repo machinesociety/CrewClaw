@@ -88,9 +88,10 @@ function Update-ImageDigest {
     if (Test-Path $settingsFile) {
         Write-Host "更新 $settingsFile 文件..." -ForegroundColor Cyan
         $content = Get-Content $settingsFile -Raw
-        # 替换任何格式的镜像引用，包括错误的格式
-        $replacement = 'runtime_openclaw_image_ref: str = (\n        "ghcr.io/openclaw/openclaw@' + $cleanDigest + '"\n    )'
-        $newContent = $content -replace 'runtime_openclaw_image_ref: str = \([^)]+\)', $replacement
+        # 替换任何格式的镜像引用，使用单行格式避免语法错误
+        $replacement = 'runtime_openclaw_image_ref: str = "ghcr.io/openclaw/openclaw@' + $cleanDigest + '"'
+        $newContent = $content -replace 'runtime_openclaw_image_ref: str = "[^"]+"', $replacement
+        $newContent = $newContent -replace 'runtime_openclaw_image_ref: str = \([^)]+\)', $replacement
         Set-Content $settingsFile -Value $newContent
         Write-Host "$settingsFile 文件更新成功" -ForegroundColor Green
     } else {
