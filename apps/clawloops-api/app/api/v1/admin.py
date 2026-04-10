@@ -26,10 +26,8 @@ from app.repositories.usage_repository import (
 from app.repositories.model_repository import (
     ModelRepository,
     ProviderCredentialRepository,
-    UsageRepository,
     get_inmemory_model_repository,
     get_inmemory_provider_credential_repository,
-    get_inmemory_usage_repository,
 )
 from app.schemas.admin import (
     AdminUsageSummaryResponse,
@@ -429,10 +427,7 @@ async def get_admin_usage_summary(
     service: UsageService = Depends(get_usage_service),
 ) -> AdminUsageSummaryResponse:
     summary = service.get_total_usage()
-    return AdminUsageSummaryResponse(
-        totalTokens=summary.total_tokens,
-        usedTokens=summary.used_tokens,
-    )
+    return summary
 
 
 @router.get("/admin/invitations")
