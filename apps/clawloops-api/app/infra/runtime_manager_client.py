@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -49,6 +50,16 @@ class RuntimeManagerClient:
     ) -> dict[str, Any]:
         with httpx.Client(base_url=self._base_url, timeout=self._timeout) as client:
             response = client.post(path, data=data, files=files)
+        if response.is_error:
+            raise RuntimeError(f"runtime-manager request failed: {response.status_code}")
+        body = response.json()
+        if not isinstance(body, dict):
+            raise RuntimeError("runtime-manager response is not a JSON object")
+        return body
+
+    def _request_form(self, path: str, data: dict[str, Any]) -> dict[str, Any]:
+        with httpx.Client(base_url=self._base_url, timeout=self._timeout) as client:
+            response = client.post(path, data=data)
         if response.is_error:
             raise RuntimeError(f"runtime-manager request failed: {response.status_code}")
         body = response.json()
@@ -124,12 +135,22 @@ class RuntimeManagerClient:
         files = result.get("files", [])
         return files if isinstance(files, list) else []
 
-    def upload_skill(self, scope: str, content: bytes, filename: str, user_id: str | None = None, name: str | None = None) -> dict[str, Any]:
+    def upload_skill(
+        self,
+        scope: str,
+        content: bytes,
+        filename: str,
+        user_id: str | None = None,
+        name: str | None = None,
+        overwrite: bool | None = None,
+    ) -> dict[str, Any]:
         data: dict[str, Any] = {"scope": scope}
         if user_id is not None:
             data["userId"] = user_id
         if name is not None:
             data["name"] = name
+        if overwrite is not None:
+            data["overwrite"] = str(bool(overwrite)).lower()
         return self._request_multipart(
             "/internal/runtime-manager/skills/upload",
             data=data,
@@ -141,3 +162,34 @@ class RuntimeManagerClient:
         if user_id is not None:
             query += f"&userId={user_id}"
         return self._request_bytes("GET", query)
+
+    def delete_skill(self, scope: str, name: str, user_id: str | None = None) -> None:
+        query = f"/internal/runtime-manager/skills/delete?scope={scope}&name={name}"
+        if user_id is not None:
+            query += f"&userId={user_id}"
+        self._request("DELETE", query)
+
+    def list_public_entries(self, path: str = "", page: int = 1, page_size: int = 10) -> dict[str, Any]:
+        query = f"/internal/runtime-manager/public/files/list?page={page}&pageSize={page_size}"
+        if path:
+            query += f"&path={quote(path, safe='')}"
+        return self._request("GET", query)
+
+    def upload_public_file(self, path: str, content: bytes, filename: str, overwrite: bool) -> dict[str, Any]:
+        data: dict[str, Any] = {"path": path, "overwrite": str(bool(overwrite)).lower()}
+        return self._request_multipart(
+            "/internal/runtime-manager/public/files/upload",
+            data=data,
+            files={"file": (filename, content, "application/octet-stream")},
+        )
+
+    def download_public_file(self, path: str) -> tuple[bytes, dict[str, str]]:
+        query = f"/internal/runtime-manager/public/files/download?path={quote(path, safe='')}"
+        return self._request_bytes("GET", query)
+
+    def delete_public_path(self, path: str) -> None:
+        query = f"/internal/runtime-manager/public/files/delete?path={quote(path, safe='')}"
+        self._request("DELETE", query)
+
+    def mkdir_public_dir(self, path: str) -> None:
+        self._request_form("/internal/runtime-manager/public/files/mkdir", data={"path": path})

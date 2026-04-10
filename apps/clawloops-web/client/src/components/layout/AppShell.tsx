@@ -48,7 +48,7 @@ const userNavItems: NavItem[] = [
   { label: '工作台', href: '/app', icon: LayoutDashboard },
   { label: '工作区入口', href: '/workspace-entry', icon: ExternalLink },
   { label: '文件浏览器', href: '/file-browser', icon: FolderOpen },
-  { label: '技能', href: '/skills', icon: Sparkles },
+  { label: '公共区域', href: '/public-area', icon: Sparkles },
 ];
 
 const adminNavItems: NavItem[] = [
@@ -58,7 +58,7 @@ const adminNavItems: NavItem[] = [
   { label: '模型治理', href: '/admin/models', icon: Cpu },
   { label: 'Provider 凭据', href: '/admin/provider-credentials', icon: Key },
   { label: 'Usage 汇总', href: '/admin/usage', icon: BarChart3 },
-  { label: '技能管理', href: '/admin/skills', icon: Sparkles },
+  { label: '公共区域管理', href: '/admin/public-area', icon: Sparkles },
 ];
 
 // ============================================================

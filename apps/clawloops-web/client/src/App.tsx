@@ -50,7 +50,7 @@ import ForcePasswordChangePage from './pages/ForcePasswordChange';
 import DashboardPage from './pages/Dashboard';
 import WorkspaceEntryPage from './pages/WorkspaceEntry';
 import FileBrowserPage from './pages/FileBrowser';
-import SkillsPage from './pages/Skills';
+import PublicAreaPage from './pages/PublicArea';
 
 // Admin pages
 import AdminHomePage from './pages/admin/AdminHome';
@@ -60,7 +60,7 @@ import AdminInvitationDetailPage from './pages/admin/AdminInvitationDetail';
 import AdminModelsPage from './pages/admin/AdminModels';
 import AdminCredentialsPage from './pages/admin/AdminCredentials';
 import AdminUsagePage from './pages/admin/AdminUsage';
-import AdminSkillsPage from './pages/admin/AdminSkills';
+import AdminPublicAreaPage from './pages/admin/AdminPublicArea';
 
 // Error pages
 import {
@@ -86,7 +86,7 @@ function Router() {
       <Route path="/app" component={DashboardPage} />
       <Route path="/workspace-entry" component={WorkspaceEntryPage} />
       <Route path="/file-browser" component={FileBrowserPage} />
-      <Route path="/skills" component={SkillsPage} />
+      <Route path="/public-area" component={PublicAreaPage} />
 
       {/* Admin routes */}
       <Route path="/admin" component={AdminHomePage} />
@@ -97,7 +97,7 @@ function Router() {
       <Route path="/admin/models" component={AdminModelsPage} />
       <Route path="/admin/provider-credentials" component={AdminCredentialsPage} />
       <Route path="/admin/usage" component={AdminUsagePage} />
-      <Route path="/admin/skills" component={AdminSkillsPage} />
+      <Route path="/admin/public-area" component={AdminPublicAreaPage} />
 
       {/* System error routes (v0.5 renamed) */}
       <Route path="/403" component={ForbiddenPage} />
