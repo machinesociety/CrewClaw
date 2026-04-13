@@ -2,27 +2,44 @@
 
 ## 用法
 
-## 镜像问题
-- 如果是国内，没有挂载VPN，则需要在执行一键启动命令前，置国内镜像加速器：
+## 国内没有VPN用户，需要解决镜像问题
+
+- 如果是国内，没有挂载VPN，则需要在执行一键启动命令前，使用目前可用的镜像站：
+
 ```bash
-sudo mkdir -p /etc/docker
-sudo tee /etc/docker/daemon.json > /dev/null <<EOF
+sudo nano /etc/docker/daemon.json
+
+
+#将上述文档写入以下内容（JSON格式，如果文件不存在则新建）：
 {
   "registry-mirrors": [
-    "https://dockerpull.com",
-    "https://docker.anyhub.us.kg",
     "https://docker.m.daocloud.io",
-    "https://docker.1panel.live"
+    "https://dockerproxy.com",
+    "https://docker.unsee.tech",
+    "https://docker.udayun.com",
+    "https://docker.anyhub.us.kg"
   ]
 }
-EOF
+
 ```
 
+<br />
+
+- **重启docker服务**：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+
+```
+
+<br />
+
 - 使用官方安装脚本库 + 阿里云镜像一键安装 Docker
+
 ```bash
 curl -fsSL https://get.docker.com | bash -s docker --mirror Aliyun
 ```
-
 
 ## 做完上述操作后，即可执行下面A或B方式的一键启动命令，国内一般第一次下载配置等执行会很慢！
 
@@ -71,34 +88,66 @@ bash /path/to/CrewClaw/oneclick/start-crewclaw.sh /path/to/CrewClaw
 
 ## 常见问题与排错
 
-
-### 1) 不要盲目的自行安装docker + docker-compose
+### 一、 不要盲目的自行安装docker + docker-compose
 
 脚本会自动检测并安装 Docker + Docker Compose plugin（Ubuntu），无需手动安装。
 如果自行安装了，请卸载：
+
 1、停止 Docker 服务：
+
 ```bash
   sudo systemctl stop docker
   sudo systemctl stop docker.socket
   sudo systemctl stop containerd
 ```
+
 2、卸载 Docker：
+
 ```bash
 sudo apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin docker-ce-rootless-extras
 ```
+
 3、清理残留：
+
 ```bash
 sudo apt-get autoremove -y
 ```
+
 4、删除 Docker 的残留：
+
 ```bash
 sudo rm -rf /var/lib/docker
 sudo rm -rf /var/lib/containerd
 sudo rm -rf /etc/docker
 ```
 
+<br />
 
-### 2) 手动安装后，脚本会提示失败，提示“请先卸载已安装的 Docker + Docker Compose”
+5、做完之后：
+
+删除损坏的 Docker 记录
+
+```bash
+sudo rm -f /etc/apt/sources.list.d/docker.list
+
+sudo rm -f /etc/apt/keyrings/docker.gpg
+```
+
+6、清理并重新更新一遍软件列表：
+
+```bash
+sudo apt-get clean
+
+sudo apt-get update
+```
+
+7、如果没有出现`NO_PUBKEY` 错误
+
+```bash
+bash oneclick/start-crewclaw\.sh
+```
+
+<br />
 
 ### 1) 安装 Docker 时提示 NO\_PUBKEY / GPG 错误
 
@@ -116,12 +165,11 @@ bash oneclick/start-crewclaw.sh /path/to/CrewClaw
 
 如果在公司内网/代理环境，确认 `curl https://download.docker.com/linux/ubuntu/gpg` 能获取到正确的 key 内容（并确保系统时间正确，否则签名校验也可能异常）。
 
-### 2) docker compose down 提示 network “Resource is still in use”
+### 二、docker compose down 提示 network “Resource is still in use”
 
 表示还有容器仍连接在 `clawloops_shared` 网络上（通常是 per-user runtime 容器），无须担心！
 
-
-### 3) 访问主站返回 404
+### 三、 访问主站返回 404
 
 优先确认：
 
@@ -129,7 +177,7 @@ bash oneclick/start-crewclaw.sh /path/to/CrewClaw
 - `infra/compose/.env` 里的 `CLAWLOOPS_DOMAIN` 是否与你当前服务器 IP 一致
 - `infra/traefik/dynamic/middlewares.yml` 内域名/IP 是否已被更新
 
-### 4) Runtime 启动失败：network not found
+### 四、 Runtime 启动失败：network not found
 
 多见于网络被重建后，旧容器仍记录了不存在的 network ID。处理方式通常是删除该 runtime 容器，让系统重建：
 
@@ -138,7 +186,7 @@ docker ps -a --filter label=clawloops.managed=true
 docker rm -f <容器ID>
 ```
 
-### 5) 构建 clawloops-api 时 pip 超时（Read timed out）
+### 五、构建 clawloops-api 时 pip 超时（Read timed out）
 
 现象示例：`ReadTimeoutError ... files.pythonhosted.org ... Read timed out`。通常是目标机器到 PyPI 的下载链路不稳定（即使 `PIP_INDEX_URL=pypi.org`，实际包文件也会从 `files.pythonhosted.org` 拉取）。
 
@@ -151,7 +199,32 @@ RUNTIME_MANAGER_PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 
 然后重新执行脚本或直接 `docker compose build clawloops-api` 重试。
 
+<br />
+
+六、当出现下载超时，需要执行
+
+1、重新加载系统的管理配置
+
+```bash
+sudo systemctl daemon-reload
+```
+
+2、重启 Docker 服务，设置最开始介绍的镜像站：
+
+```bash
+sudo systemctl restart docker
+```
+
+3、执行重启后，你可以通过以下命令检查配置是否已经载入：
+
+```bash
+docker info | grep -A 5 "Registry Mirrors"
+```
+
+寻找 **`Registry Mirrors`** 这一行，确认里面显示了你刚刚添加的地址，然后再bash。
+
 ## 重要说明（安全）
 
 - 你必须在 `infra/compose/.env` 里填好 `DASHSCOPE_API_KEY`，否则 LiteLLM 调用 DashScope 会返回 500。
 - 不要把真实 API Key（例如 DashScope/OpenAI/Anthropic）提交到仓库；建议只在部署机的 `.env` 里配置，并限制文件权限。
+

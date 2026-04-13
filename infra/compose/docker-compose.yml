@@ -77,6 +77,7 @@ services:
       - RUNTIME_MANAGER_PORT=18080
       - RUNTIME_PUBLIC_HOST=${RUNTIME_PUBLIC_HOST:-localhost}
       - RUNTIME_OPENCLAW_NETWORK=clawloops_shared
+      - RUNTIME_OPENCLAW_IMAGE_REF=${RUNTIME_OPENCLAW_IMAGE_REF:-ghcr.io/openclaw/openclaw@sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /var/lib/clawloops:/var/lib/clawloops
@@ -93,7 +94,7 @@ services:
   prewarm-openclaw:
     profiles:
       - prewarm
-    image: "ghcr.io/openclaw/openclaw@sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02"
+    image: "${RUNTIME_OPENCLAW_IMAGE_REF:-ghcr.io/openclaw/openclaw@sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02}"
 
   prewarm-litellm:
     profiles:

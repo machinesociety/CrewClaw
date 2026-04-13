@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+DEFAULT_RUNTIME_IMAGE_REF="ghcr.io/openclaw/openclaw@sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02"
+
 REPO_DIR="${1:-$(pwd)}"
 if [[ ! -f "$REPO_DIR/infra/compose/docker-compose.yml" ]]; then
   echo "未找到 CrewClaw 仓库：$REPO_DIR"
@@ -116,6 +118,50 @@ update_env_file() {
   else
     echo "RUNTIME_PUBLIC_HOST=${ip}" >>"$env_file"
   fi
+
+  if ! grep -qE '^\s*RUNTIME_OPENCLAW_IMAGE_REF=' "$env_file"; then
+    echo "RUNTIME_OPENCLAW_IMAGE_REF=${DEFAULT_RUNTIME_IMAGE_REF}" >>"$env_file"
+  fi
+
+  echo "$env_file"
+}
+
+get_env_value() {
+  local env_file="$1"
+  local key="$2"
+  local value
+  value="$(grep -E "^${key}=" "$env_file" | tail -n 1 | cut -d'=' -f2- || true)"
+  value="${value%\"}"
+  value="${value#\"}"
+  echo "$value"
+}
+
+ensure_runtime_image_available() {
+  local env_file="$1"
+  local image_ref
+  image_ref="$(get_env_value "$env_file" "RUNTIME_OPENCLAW_IMAGE_REF")"
+  if [[ -z "$image_ref" ]]; then
+    image_ref="$DEFAULT_RUNTIME_IMAGE_REF"
+  fi
+
+  echo "检查 Runtime 镜像：$image_ref"
+  if sudo docker image inspect "$image_ref" >/dev/null 2>&1; then
+    echo "已存在本地镜像，跳过拉取。"
+    return 0
+  fi
+
+  echo "本地不存在，尝试拉取镜像..."
+  if sudo docker pull "$image_ref"; then
+    echo "镜像拉取成功。"
+    return 0
+  fi
+
+  echo "无法拉取 Runtime 镜像：$image_ref"
+  echo "如果当前网络无法访问镜像仓库，请先在可联网机器导出镜像，再在本机导入："
+  echo "  1) docker save -o openclaw.tar <可用镜像名>"
+  echo "  2) 在本机执行：docker load -i openclaw.tar"
+  echo "  3) 如需内网镜像，请在 $env_file 设置 RUNTIME_OPENCLAW_IMAGE_REF=<内网镜像地址>"
+  exit 1
 }
 
 update_traefik_dynamic_routes() {
@@ -163,8 +209,10 @@ main() {
     exit 1
   fi
 
-  update_env_file "$ip"
+  local env_file
+  env_file="$(update_env_file "$ip")"
   update_traefik_dynamic_routes "$ip"
+  ensure_runtime_image_available "$env_file"
   compose_up
 
   echo "启动完成。"

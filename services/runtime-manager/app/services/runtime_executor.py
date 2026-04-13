@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 import docker
-from docker.errors import APIError, NotFound
+from docker.errors import APIError, ImageNotFound, NotFound
 
 from app.core.errors import RuntimeManagerError
 from app.core.settings import Settings
@@ -19,6 +19,7 @@ from app.schemas.contracts import (
 )
 from app.services.config_writer import prepare_runtime_dirs, prepare_skill_dirs, write_openclaw_config
 from app.services.drift_detector import detect_drift
+from app.services.public_copy_sync import sync_public_copy_for_user
 from app.services.skill_exporter import sync_skill_export
 from app.services.skill_paths import container_workspace_skills_mount, skills_export_dir
 
@@ -82,18 +83,7 @@ class RuntimeExecutor:
         return False
 
     def _create_runtime_container(self, req: EnsureContainerRequest, labels: dict[str, str], alias: str):
-        # 先拉取镜像
-        try:
-            logger.info(f"Pulling image: {self._settings.runtime_openclaw_image_ref}")
-            self._docker.images.pull(self._settings.runtime_openclaw_image_ref)
-            logger.info("Image pulled successfully")
-        except Exception as e:
-            logger.error(f"Failed to pull image: {e}")
-            raise RuntimeManagerError(
-                "RUNTIME_START_FAILED",
-                f"failed to pull image: {str(e)}",
-                500,
-            ) from e
+        self._ensure_runtime_image_available()
         
         volumes = {
             req.compat.openclawConfigDir: {"bind": "/home/node/.openclaw", "mode": "rw"},
@@ -128,6 +118,37 @@ class RuntimeExecutor:
         container.start()
         return container
 
+    def _ensure_runtime_image_available(self) -> None:
+        image_ref = self._settings.runtime_openclaw_image_ref
+        try:
+            self._docker.images.get(image_ref)
+            logger.info("Using local runtime image: %s", image_ref)
+            return
+        except ImageNotFound:
+            logger.info("Local runtime image not found, pulling: %s", image_ref)
+        except APIError as exc:
+            raise RuntimeManagerError(
+                "RUNTIME_START_FAILED",
+                f"failed to query local runtime image: {str(exc)}",
+                500,
+            ) from exc
+
+        try:
+            self._docker.images.pull(image_ref)
+            logger.info("Pulled runtime image successfully: %s", image_ref)
+        except Exception as exc:
+            raise RuntimeManagerError(
+                "RUNTIME_START_FAILED",
+                (
+                    "failed to pull runtime image. "
+                    f"image={image_ref}. "
+                    "if this host has no access to the image registry, "
+                    "please pre-load image via `docker load -i <image.tar>` "
+                    "or configure `RUNTIME_OPENCLAW_IMAGE_REF` to an internal registry image"
+                ),
+                500,
+            ) from exc
+
     def ensure_running(self, req: EnsureContainerRequest) -> ContainerStateResponse:
         try:
             logger.info(f"Starting ensure_running for runtime {req.runtimeId}")
@@ -142,6 +163,10 @@ class RuntimeExecutor:
 
             sync_skill_export(req.userId)
             logger.info("Synced skill export")
+
+            # 每次 runtime 启动时同步公共区域快照到用户容器副本目录。
+            sync_public_copy_for_user(req.userId)
+            logger.info("Synced public-area copy")
             
             write_openclaw_config(req.compat.openclawConfigDir, req.renderedConfig.openclawJson)
             logger.info("Wrote openclaw config")
