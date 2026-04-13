@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useLocation, useSearch } from 'wouter';
+import { Redirect, useLocation, useSearch } from 'wouter';
 import { useAuth } from '@/contexts/AuthContext';
 import { AppShell } from '@/components/layout/AppShell';
 import { RequireAuth } from '@/components/guards/RouteGuard';
@@ -7,7 +7,6 @@ import { PageHeader, LoadingCard, ErrorDisplay } from '@/components/shared/PageC
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog,
   DialogContent,
@@ -31,7 +30,6 @@ import {
   Upload,
   Download,
   Trash2,
-  Save,
   Plus,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -115,31 +113,30 @@ export function PublicAreaView({ mode, basePath }: { mode: 'user' | 'admin'; bas
   const [qs, setCurrentPath, setPage] = useQueryState(basePath);
   const currentPath = qs.path;
   const page = qs.page;
+  const scope = mode === 'admin' ? 'global' : 'user';
   const [entries, setEntries] = useState<PublicEntry[]>([]);
   const [totalPages, setTotalPages] = useState(1);
+  const [rootPath, setRootPath] = useState('/var/lib/clawloops/shared/public/files');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
-  const [selectedName, setSelectedName] = useState<string | null>(null);
-  const [content, setContent] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [showNewFolderDialog, setShowNewFolderDialog] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
 
-  const allowAdminOps = mode === 'admin' && isAdmin;
+  const allowDelete = mode === 'admin' ? isAdmin : true;
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const res = await fetch(
-        `/api/v1/public-area/files/list?path=${encodeURIComponent(currentPath)}&page=${page}`,
+        `/api/v1/public-area/files/list?path=${encodeURIComponent(currentPath)}&page=${page}&scope=${scope}`,
         { credentials: 'include' }
       );
       if (!res.ok) throw new Error('加载失败');
       const data = await res.json();
       setEntries(data.entries || []);
+      setRootPath(data.rootPath || '/var/lib/clawloops/shared/public/files');
       const tp = data.totalPages || 1;
       setTotalPages(tp);
       if (page > tp) {
@@ -158,33 +155,14 @@ export function PublicAreaView({ mode, basePath }: { mode: 'user' | 'admin'; bas
   }, [load]);
 
   const openDir = (name: string) => {
-    setSelectedPath(null);
-    setSelectedName(null);
-    setContent('');
     setCurrentPath(joinPath(currentPath, name));
   };
 
-  const openFile = async (name: string) => {
-    const path = joinPath(currentPath, name);
-    try {
-      const res = await fetch(
-        `/api/v1/public-area/files/read?path=${encodeURIComponent(path)}`,
-        { credentials: 'include' }
-      );
-      if (!res.ok) throw new Error('读取失败');
-      const data = await res.json();
-      setSelectedPath(path);
-      setSelectedName(name);
-      setContent(data.content || '');
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '读取失败');
-    }
-  };
-
   const goUp = () => {
-    setSelectedPath(null);
-    setSelectedName(null);
-    setContent('');
+    if (!currentPath) {
+      toast.error('不允许再回退');
+      return;
+    }
     setCurrentPath(parentPath(currentPath));
   };
 
@@ -194,6 +172,7 @@ export function PublicAreaView({ mode, basePath }: { mode: 'user' | 'admin'; bas
     try {
       const form = new FormData();
       form.append('path', joinPath(currentPath, folder));
+      form.append('scope', scope);
       const res = await fetch('/api/v1/public-area/files/mkdir', {
         method: 'POST',
         credentials: 'include',
@@ -218,7 +197,8 @@ export function PublicAreaView({ mode, basePath }: { mode: 'user' | 'admin'; bas
         const form = new FormData();
         form.append('path', joinPath(currentPath, f.name));
         form.append('file', f);
-        if (allowAdminOps) form.append('overwrite', 'true');
+        form.append('scope', scope);
+        if (mode === 'admin' && isAdmin) form.append('overwrite', 'true');
         const res = await fetch('/api/v1/public-area/files/upload', {
           method: 'POST',
           credentials: 'include',
@@ -240,7 +220,7 @@ export function PublicAreaView({ mode, basePath }: { mode: 'user' | 'admin'; bas
     const path = joinPath(currentPath, name);
     try {
       const res = await fetch(
-        `/api/v1/public-area/files/download?path=${encodeURIComponent(path)}`,
+        `/api/v1/public-area/files/download?path=${encodeURIComponent(path)}&scope=${scope}`,
         { credentials: 'include' }
       );
       if (!res.ok) throw new Error('下载失败');
@@ -259,43 +239,17 @@ export function PublicAreaView({ mode, basePath }: { mode: 'user' | 'admin'; bas
   };
 
   const deletePath = async (name: string) => {
-    if (!allowAdminOps) return;
     const path = joinPath(currentPath, name);
     try {
       const res = await fetch(
-        `/api/v1/public-area/files/delete?path=${encodeURIComponent(path)}`,
+        `/api/v1/public-area/files/delete?path=${encodeURIComponent(path)}&scope=${scope}`,
         { method: 'DELETE', credentials: 'include' }
       );
       if (!res.ok) throw new Error('删除失败');
       toast.success('已删除');
-      if (selectedPath === path) {
-        setSelectedPath(null);
-        setSelectedName(null);
-        setContent('');
-      }
       await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '删除失败');
-    }
-  };
-
-  const save = async () => {
-    if (!allowAdminOps || !selectedPath) return;
-    setIsSaving(true);
-    try {
-      const res = await fetch('/api/v1/public-area/files/write', {
-        method: 'PUT',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: selectedPath, content }),
-      });
-      if (!res.ok) throw new Error('保存失败');
-      toast.success('保存成功');
-      await load();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '保存失败');
-    } finally {
-      setIsSaving(false);
     }
   };
 
@@ -303,7 +257,7 @@ export function PublicAreaView({ mode, basePath }: { mode: 'user' | 'admin'; bas
   const desc =
     mode === 'admin'
       ? '以目录路径管理公共文件（支持覆盖与删除）'
-      : '以目录路径浏览并上传/下载公共文件';
+      : '以目录路径浏览并上传/下载公共文件（仅容器副本）';
 
   const iconForFile = (name: string) => {
     const ext = name.toLowerCase().split('.').pop() || '';
@@ -360,8 +314,8 @@ export function PublicAreaView({ mode, basePath }: { mode: 'user' | 'admin'; bas
       {error && <ErrorDisplay message={error} />}
 
       {!loading && !error && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-          <Card className="lg:col-span-2 card-glow">
+        <div className="grid grid-cols-1 gap-5">
+          <Card className="card-glow">
             <CardHeader className="pb-3">
               <div className="flex items-center gap-2">
                 <Button
@@ -375,7 +329,7 @@ export function PublicAreaView({ mode, basePath }: { mode: 'user' | 'admin'; bas
                 </Button>
                 <CardTitle className="text-base flex items-center gap-2">
                   <span className="text-muted-foreground">/</span>
-                  <span className="truncate">{currentPath || '(public)'}</span>
+                  <span className="truncate">{currentPath ? `${rootPath}/${currentPath}` : rootPath}</span>
                 </CardTitle>
                 <div className="ml-auto text-xs text-muted-foreground mono">
                   {user?.userId}
@@ -393,7 +347,7 @@ export function PublicAreaView({ mode, basePath }: { mode: 'user' | 'admin'; bas
                   >
                     <button
                       className="flex items-center gap-2 min-w-0 flex-1 text-left"
-                      onClick={() => (e.isDir ? openDir(e.name) : openFile(e.name))}
+                      onClick={() => (e.isDir ? openDir(e.name) : undefined)}
                     >
                       {e.isDir ? (
                         <Folder className="w-4 h-4 text-muted-foreground flex-shrink-0" />
@@ -421,7 +375,7 @@ export function PublicAreaView({ mode, basePath }: { mode: 'user' | 'admin'; bas
                           下载
                         </Button>
                       )}
-                      {allowAdminOps && (
+                      {allowDelete && (
                         <Button
                           variant="destructive"
                           size="icon"
@@ -462,36 +416,6 @@ export function PublicAreaView({ mode, basePath }: { mode: 'user' | 'admin'; bas
             </CardContent>
           </Card>
 
-          <Card className="card-glow">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center justify-between">
-                <span>文件内容</span>
-                {allowAdminOps && selectedPath && (
-                  <Button variant="outline" size="sm" onClick={save} disabled={isSaving}>
-                    <Save className="w-4 h-4 mr-1" />
-                    保存
-                  </Button>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {!selectedPath ? (
-                <div className="text-sm text-muted-foreground">选择一个文件查看</div>
-              ) : (
-                <>
-                  <div className="text-xs text-muted-foreground mono truncate">
-                    {selectedName}
-                  </div>
-                  <Textarea
-                    value={content}
-                    onChange={(e) => setContent(e.target.value)}
-                    className="min-h-[360px] font-mono text-sm"
-                    readOnly={!allowAdminOps}
-                  />
-                </>
-              )}
-            </CardContent>
-          </Card>
         </div>
       )}
 
@@ -525,6 +449,10 @@ export function PublicAreaView({ mode, basePath }: { mode: 'user' | 'admin'; bas
 }
 
 export default function PublicAreaPage() {
+  const { isAdmin } = useAuth();
+  if (isAdmin) {
+    return <Redirect to="/admin/public-area" />;
+  }
   return (
     <RequireAuth>
       <AppShell>

@@ -97,6 +97,9 @@ function NavLink({ item }: { item: NavItem }) {
 
 function Sidebar() {
   const { user, isAdmin, logout } = useAuth();
+  const visibleUserNavItems = isAdmin
+    ? userNavItems.filter((item) => item.href !== '/public-area')
+    : userNavItems;
 
   const initials = user?.userId
     ? user.userId.slice(0, 2).toUpperCase()
@@ -123,7 +126,7 @@ function Sidebar() {
           <p className="text-xs font-medium text-muted-foreground/60 uppercase tracking-wider px-3 mb-2">
             用户
           </p>
-          {userNavItems.map((item) => (
+          {visibleUserNavItems.map((item) => (
             <NavLink key={item.href} item={item} />
           ))}
         </div>
