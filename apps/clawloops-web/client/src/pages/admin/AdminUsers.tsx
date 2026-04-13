@@ -103,7 +103,7 @@ function UsersListContent() {
   function formatDate(iso?: string) {
     if (!iso) return '—';
     try {
-      return new Date(iso).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' });
+      return new Date(iso).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Shanghai' });
     } catch {
       return iso;
     }
@@ -330,7 +330,7 @@ function UserDetailContent() {
   function formatDate(iso?: string) {
     if (!iso) return undefined;
     try {
-      return new Date(iso).toLocaleString('zh-CN');
+      return new Date(iso).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
     } catch {
       return iso;
     }

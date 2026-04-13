@@ -273,14 +273,16 @@ function AdminInvitationsContent() {
   function formatDate(iso?: string) {
     if (!iso) return '—';
     try {
-      return new Date(iso).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' });
+      return new Date(iso).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Shanghai' });
     } catch {
       return iso;
     }
   }
 
   function isExpired(iso: string) {
-    return new Date(iso) < new Date();
+    const inviteDate = new Date(iso);
+    const now = new Date();
+    return inviteDate.getTime() < now.getTime();
   }
 
   return (

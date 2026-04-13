@@ -116,8 +116,8 @@ def _to_admin_invitation_item(row: InvitationModel) -> AdminInvitationItem:
         workspaceId=row.workspace_id,
         role=row.role,
         status=row.status,
-        expiresAt=row.expires_at.isoformat(),
-        consumedAt=row.consumed_at.isoformat() if row.consumed_at else None,
+        expiresAt=row.expires_at.replace(tzinfo=timezone.utc).isoformat(),
+        consumedAt=row.consumed_at.replace(tzinfo=timezone.utc).isoformat() if row.consumed_at else None,
         consumedByUserId=row.consumed_by_user_id,
         lastError=None,
         createdAt=None,
@@ -233,7 +233,7 @@ async def list_users(
                 status=u.status.value,
                 authMethod="local_password",
                 runtimeObservedState=binding.observed_state.value if binding else None,
-                lastLoginAt=u.last_login_at.isoformat() if u.last_login_at else None,
+                lastLoginAt=u.last_login_at.astimezone(timezone.utc).isoformat() if u.last_login_at else None,
                 username=u.username,
                 email=None,
             )
@@ -260,10 +260,10 @@ async def get_admin_user_detail(
         status=user.status.value,
         authMethod="local_password",
         runtimeObservedState=binding.observed_state.value if binding else None,
-        lastLoginAt=user.last_login_at.isoformat() if user.last_login_at else None,
+        lastLoginAt=user.last_login_at.astimezone(timezone.utc).isoformat() if user.last_login_at else None,
         username=user.username,
         email=None,
-        createdAt=user.created_at.isoformat() if user.created_at else None,
+        createdAt=user.created_at.astimezone(timezone.utc).isoformat() if user.created_at else None,
     )
 
 
