@@ -65,12 +65,18 @@ class FileStorageManager:
         if not os.path.exists(user_path):
             return False
         
-        # 构建完整路径
-        target_path = os.path.join(user_path, "workspace", path)
-        if not os.path.exists(target_path):
-            return False
-        
         try:
+            # 如果path为空，删除整个用户目录
+            if not path:
+                import shutil
+                shutil.rmtree(user_path)
+                return True
+            
+            # 否则，删除特定的路径
+            target_path = os.path.join(user_path, "workspace", path)
+            if not os.path.exists(target_path):
+                return False
+            
             if os.path.isdir(target_path):
                 import shutil
                 shutil.rmtree(target_path)
@@ -136,9 +142,11 @@ class UserFileService:
     
     def get_user_files(self, username: str, path: str = "") -> List[Dict]:
         """
-        获取特定用户的文件列表
+        获取特定用户的文件列表（只返回目录）
         """
-        return self.storage_manager.list_files(username, path)
+        files = self.storage_manager.list_files(username, path)
+        # 只返回目录，过滤掉文件
+        return [file for file in files if file["isDirectory"]]
     
     def delete_file(self, username: str, path: str) -> bool:
         """

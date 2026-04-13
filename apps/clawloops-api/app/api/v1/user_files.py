@@ -48,7 +48,7 @@ async def get_user_files(
 @router.delete("/admin/user-files/{username}/delete")
 async def delete_file(
     username: str,
-    path: str,
+    path: str = "",
     ctx: AuthContext = Depends(require_admin_user),
     user_file_service: UserFileService = Depends(get_user_file_service),
 ):
@@ -56,8 +56,8 @@ async def delete_file(
     删除特定用户的文件
     """
     try:
-        # 确保只能删除一级目录中的文件
-        if "/" in path:
+        # 如果path不为空，确保只能删除一级目录中的文件
+        if path and "/" in path:
             raise HTTPException(status_code=403, detail="只能删除一级目录中的文件")
         
         success = user_file_service.delete_file(username, path)
