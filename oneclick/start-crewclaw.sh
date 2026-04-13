@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
-set -euo pipefail
+# 如果误用 sh 执行，自动切回 bash，避免 dash 不支持语法导致异常。
+if [[ -z "${BASH_VERSION:-}" ]]; then
+  exec /usr/bin/env bash "$0" "$@"
+fi
+
+set -eu
+set -o pipefail
 
 DEFAULT_RUNTIME_IMAGE_REF="ghcr.io/openclaw/openclaw@sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02"
 
