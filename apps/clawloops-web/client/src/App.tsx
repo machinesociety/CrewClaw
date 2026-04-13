@@ -96,7 +96,6 @@ function Router() {
       <Route path="/admin/provider-credentials" component={AdminCredentialsPage} />
       <Route path="/admin/usage" component={AdminUsagePage} />
       <Route path="/admin/user-files" component={UserFileManagementPage} />
-      <Route path="/admin/user-files/:username" component={UserFileManagementPage} />
 
       {/* System error routes (v0.5 renamed) */}
       <Route path="/403" component={ForbiddenPage} />

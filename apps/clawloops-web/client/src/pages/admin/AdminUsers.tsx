@@ -11,9 +11,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams, Link } from 'wouter';
 import {
   adminApi,
+  authApi,
   AdminUser,
   AdminUserDetail,
   RuntimeBinding,
+  SessionUser,
   isAppError,
 } from '@/lib/api';
 import { RequireAdmin } from '@/components/guards/RouteGuard';
@@ -60,6 +62,7 @@ import {
 
 function UsersListContent() {
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [currentUser, setCurrentUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [patchingUserId, setPatchingUserId] = useState<string | null>(null);
@@ -68,6 +71,17 @@ function UsersListContent() {
     userId: string;
     action: 'enable' | 'disable';
   } | null>(null);
+
+  const loadCurrentUser = useCallback(async () => {
+    try {
+      const res = await authApi.me();
+      if (res.authenticated && res.user) {
+        setCurrentUser(res.user);
+      }
+    } catch (e) {
+      console.error('Failed to load current user:', e);
+    }
+  }, []);
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
@@ -83,8 +97,9 @@ function UsersListContent() {
   }, []);
 
   useEffect(() => {
+    loadCurrentUser();
     loadUsers();
-  }, [loadUsers]);
+  }, [loadCurrentUser, loadUsers]);
 
   const handleStatusChange = async (userId: string, newStatus: 'active' | 'disabled') => {
     setPatchingUserId(userId);
@@ -196,14 +211,18 @@ function UsersListContent() {
                           variant="ghost"
                           size="sm"
                           className="h-7 text-xs gap-1"
-                          disabled={patchingUserId === user.userId}
-                          onClick={() =>
+                          disabled={patchingUserId === user.userId || (user.status === 'active' && currentUser?.userId === user.userId)}
+                          onClick={() => {
+                            if (user.status === 'active' && currentUser?.userId === user.userId) {
+                              toast.error('无法禁用自己的账号');
+                              return;
+                            }
                             setConfirmDialog({
                               open: true,
                               userId: user.userId,
                               action: user.status === 'active' ? 'disable' : 'enable',
-                            })
-                          }
+                            });
+                          }}
                         >
                           {patchingUserId === user.userId ? (
                             <Loader2 className="w-3 h-3 animate-spin" />
@@ -269,12 +288,24 @@ function UserDetailContent() {
   const userId = params.userId;
 
   const [user, setUser] = useState<AdminUserDetail | null>(null);
+  const [currentUser, setCurrentUser] = useState<SessionUser | null>(null);
   const [runtime, setRuntime] = useState<RuntimeBinding | null>(null);
   const [userLoading, setUserLoading] = useState(true);
   const [runtimeLoading, setRuntimeLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [patchingStatus, setPatchingStatus] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState(false);
+
+  const loadCurrentUser = useCallback(async () => {
+    try {
+      const res = await authApi.me();
+      if (res.authenticated && res.user) {
+        setCurrentUser(res.user);
+      }
+    } catch (e) {
+      console.error('Failed to load current user:', e);
+    }
+  }, []);
 
   const loadUser = useCallback(async () => {
     if (!userId) return;
@@ -306,9 +337,10 @@ function UserDetailContent() {
   }, [userId]);
 
   useEffect(() => {
+    loadCurrentUser();
     loadUser();
     loadRuntime();
-  }, [loadUser, loadRuntime]);
+  }, [loadCurrentUser, loadUser, loadRuntime]);
 
   const handleStatusToggle = async () => {
     if (!user) return;
@@ -364,8 +396,14 @@ function UserDetailContent() {
                   size="sm"
                   variant={user.status === 'active' ? 'destructive' : 'outline'}
                   className="gap-1.5 h-7 text-xs"
-                  disabled={patchingStatus}
-                  onClick={() => setConfirmDialog(true)}
+                  disabled={patchingStatus || (user.status === 'active' && currentUser?.userId === user.userId)}
+                  onClick={() => {
+                    if (user.status === 'active' && currentUser?.userId === user.userId) {
+                      toast.error('无法禁用自己的账号');
+                      return;
+                    }
+                    setConfirmDialog(true);
+                  }}
                 >
                   {patchingStatus ? (
                     <Loader2 className="w-3 h-3 animate-spin" />

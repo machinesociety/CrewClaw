@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 interface User {
   username: string;
@@ -15,6 +16,8 @@ export default function UserFileManagement() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<string | null>(null);
 
   // 加载所有用户
   const loadUsers = async () => {
@@ -38,20 +41,32 @@ export default function UserFileManagement() {
     loadUsers();
   }, []);
 
+  // 打开删除确认对话框
+  const openDeleteDialog = (username: string) => {
+    console.log('Opening delete dialog for user:', username);
+    setUserToDelete(username);
+    setDeleteDialogOpen(true);
+  };
+
   // 处理删除用户文件
-  const handleDeleteUser = async (username: string) => {
-    if (!window.confirm(`确定要删除用户 ${username} 的所有文件吗？此操作不可恢复！`)) return;
+  const handleDeleteUser = async () => {
+    if (!userToDelete) return;
+    console.log('Deleting files for user:', userToDelete);
     
     try {
-      const res = await fetch(`/api/v1/admin/user-files/${username}/delete?path=`, {
+      const res = await fetch(`/api/v1/admin/user-files/${userToDelete}/delete?path=`, {
         method: 'DELETE',
         credentials: 'include',
       });
       if (!res.ok) throw new Error('Failed to delete user files');
       // 刷新用户列表
       loadUsers();
+      setDeleteDialogOpen(false);
+      setUserToDelete(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : '删除用户文件失败');
+      setDeleteDialogOpen(false);
+      setUserToDelete(null);
     }
   };
 
@@ -114,7 +129,7 @@ export default function UserFileManagement() {
                           variant="ghost"
                           size="sm"
                           className="text-destructive"
-                          onClick={() => handleDeleteUser(user.username)}
+                          onClick={() => openDeleteDialog(user.username)}
                         >
                           <Trash2 className="h-4 w-4" />
                           删除
@@ -128,6 +143,26 @@ export default function UserFileManagement() {
           </CardContent>
         </Card>
       )}
+
+      {/* 删除确认对话框 */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认删除</DialogTitle>
+            <DialogDescription>
+              确定要删除用户 {userToDelete} 的所有文件吗？此操作不可恢复！
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+              取消
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteUser}>
+              确认删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
