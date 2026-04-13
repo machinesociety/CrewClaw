@@ -15,7 +15,11 @@ def skills_root_dir() -> Path:
 
 
 def public_files_dir() -> Path:
-    return public_root_dir() / "files"
+    return public_root_dir()
+
+
+def runtime_public_copy_dir(user_id: str) -> Path:
+    return Path("/var/lib/clawloops") / user_id / "workspace" / "public"
 
 
 def skills_public_dir() -> Path:

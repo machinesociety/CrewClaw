@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import os
 import tempfile
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
 from app.core.errors import RuntimeManagerError
-from app.services.skill_paths import public_files_dir
+from app.services.skill_paths import public_files_dir, public_root_dir, runtime_public_copy_dir
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,30 @@ def _resolve_under_root(root: Path, rel: Path) -> Path:
     return target
 
 
+def resolve_public_root(user_id: str | None = None) -> Path:
+    if user_id is None:
+        _migrate_legacy_public_files_dir()
+    return runtime_public_copy_dir(user_id) if user_id else public_files_dir()
+
+
+def _migrate_legacy_public_files_dir() -> None:
+    root = public_root_dir()
+    legacy = root / "files"
+    if not legacy.exists() or not legacy.is_dir():
+        return
+    root.mkdir(parents=True, exist_ok=True)
+    for item in legacy.iterdir():
+        target = root / item.name
+        if target.exists():
+            continue
+        if item.is_dir():
+            shutil.move(str(item), str(target))
+        else:
+            shutil.move(str(item), str(target))
+    if legacy.exists():
+        shutil.rmtree(legacy)
+
+
 def _sorted_dir_entries(target: Path) -> list[PublicEntry]:
     entries: list[PublicEntry] = []
     for p in target.iterdir():
@@ -54,8 +79,8 @@ def _sorted_dir_entries(target: Path) -> list[PublicEntry]:
     return entries
 
 
-def list_public_entries(path: str, page: int, page_size: int) -> tuple[list[PublicEntry], int]:
-    root = public_files_dir()
+def list_public_entries(path: str, page: int, page_size: int, user_id: str | None = None) -> tuple[list[PublicEntry], int]:
+    root = resolve_public_root(user_id)
     root.mkdir(parents=True, exist_ok=True)
     if page < 1:
         raise RuntimeManagerError("PUBLIC_INVALID_PAGE", "invalid page", 400)
@@ -76,8 +101,8 @@ def list_public_entries(path: str, page: int, page_size: int) -> tuple[list[Publ
     return all_entries[start:end], total
 
 
-def create_public_dir(path: str) -> None:
-    root = public_files_dir()
+def create_public_dir(path: str, user_id: str | None = None) -> None:
+    root = resolve_public_root(user_id)
     root.mkdir(parents=True, exist_ok=True)
     rel = _safe_rel_path(path)
     target = _resolve_under_root(root, rel)
@@ -86,8 +111,8 @@ def create_public_dir(path: str) -> None:
     target.mkdir(parents=True, exist_ok=True)
 
 
-def read_public_file(path: str) -> tuple[str, bytes]:
-    root = public_files_dir()
+def read_public_file(path: str, user_id: str | None = None) -> tuple[str, bytes]:
+    root = resolve_public_root(user_id)
     root.mkdir(parents=True, exist_ok=True)
     rel = _safe_rel_path(path)
     target = _resolve_under_root(root, rel)
@@ -96,8 +121,8 @@ def read_public_file(path: str) -> tuple[str, bytes]:
     return target.name, target.read_bytes()
 
 
-def write_public_file(path: str, data: bytes, overwrite: bool) -> PublicEntry:
-    root = public_files_dir()
+def write_public_file(path: str, data: bytes, overwrite: bool, user_id: str | None = None) -> PublicEntry:
+    root = resolve_public_root(user_id)
     root.mkdir(parents=True, exist_ok=True)
     rel = _safe_rel_path(path)
     target = _resolve_under_root(root, rel)
@@ -128,8 +153,8 @@ def write_public_file(path: str, data: bytes, overwrite: bool) -> PublicEntry:
     return PublicEntry(name=target.name, isDir=False, size=st.st_size, modifiedAt=st.st_mtime)
 
 
-def delete_public_path(path: str) -> None:
-    root = public_files_dir()
+def delete_public_path(path: str, user_id: str | None = None) -> None:
+    root = resolve_public_root(user_id)
     root.mkdir(parents=True, exist_ok=True)
     rel = _safe_rel_path(path)
     target = _resolve_under_root(root, rel)

@@ -20,6 +20,7 @@ from app.services.public_storage import (
     read_public_file,
     write_public_file,
 )
+from app.services.skill_paths import public_root_dir
 from app.services.skill_exporter import sync_all_skill_exports, sync_skill_export
 from app.services.skill_storage import (
     delete_skill,
@@ -63,6 +64,7 @@ class PublicListItem(BaseModel):
 
 class PublicListResponse(BaseModel):
     entries: list[PublicListItem]
+    rootPath: str
     page: int
     pageSize: int
     total: int
@@ -277,15 +279,16 @@ def delete_skill_api(scope: str, name: str, userId: str | None = None) -> dict:
     response_model=PublicListResponse,
     responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
 )
-def list_public_files(path: str = "", page: int = 1, pageSize: int = 10) -> PublicListResponse:
+def list_public_files(path: str = "", page: int = 1, pageSize: int = 10, userId: str | None = None) -> PublicListResponse:
     try:
-        entries, total = list_public_entries(path=path, page=page, page_size=pageSize)
+        entries, total = list_public_entries(path=path, page=page, page_size=pageSize, user_id=userId)
         total_pages = (total + pageSize - 1) // pageSize if total > 0 else 1
         if page > total_pages:
             page = total_pages
-            entries, total = list_public_entries(path=path, page=page, page_size=pageSize)
+            entries, total = list_public_entries(path=path, page=page, page_size=pageSize, user_id=userId)
         return PublicListResponse(
             entries=[PublicListItem(name=e.name, isDir=e.isDir, size=e.size, modifiedAt=e.modifiedAt) for e in entries],
+            rootPath=str(public_root_dir()),
             page=page,
             pageSize=pageSize,
             total=total,
@@ -299,9 +302,9 @@ def list_public_files(path: str = "", page: int = 1, pageSize: int = 10) -> Publ
     "/public/files/mkdir",
     responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
 )
-def mkdir_public_dir(path: str = Form(...)) -> dict:
+def mkdir_public_dir(path: str = Form(...), userId: str | None = Form(None)) -> dict:
     try:
-        create_public_dir(path=path)
+        create_public_dir(path=path, user_id=userId)
         return {"success": True}
     except RuntimeManagerError as err:
         _raise_http(err)
@@ -311,9 +314,9 @@ def mkdir_public_dir(path: str = Form(...)) -> dict:
     "/public/files/download",
     responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
 )
-def download_public_file(path: str) -> Response:
+def download_public_file(path: str, userId: str | None = None) -> Response:
     try:
-        filename, data = read_public_file(path=path)
+        filename, data = read_public_file(path=path, user_id=userId)
         return Response(
             content=data,
             media_type="application/octet-stream",
@@ -331,11 +334,12 @@ def download_public_file(path: str) -> Response:
 async def upload_public_file(
     path: str = Form(...),
     overwrite: bool = Form(False),
+    userId: str | None = Form(None),
     file: UploadFile = File(...),
 ) -> PublicListItem:
     try:
         content = await file.read()
-        saved = write_public_file(path=path, data=content, overwrite=overwrite)
+        saved = write_public_file(path=path, data=content, overwrite=overwrite, user_id=userId)
         return PublicListItem(
             name=saved.name,
             isDir=saved.isDir,
@@ -350,9 +354,9 @@ async def upload_public_file(
     "/public/files/delete",
     responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
 )
-def delete_public_file(path: str) -> dict:
+def delete_public_file(path: str, userId: str | None = None) -> dict:
     try:
-        delete_public_path(path=path)
+        delete_public_path(path=path, user_id=userId)
         return {"success": True}
     except RuntimeManagerError as err:
         _raise_http(err)

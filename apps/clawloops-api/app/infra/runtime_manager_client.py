@@ -169,27 +169,51 @@ class RuntimeManagerClient:
             query += f"&userId={user_id}"
         self._request("DELETE", query)
 
-    def list_public_entries(self, path: str = "", page: int = 1, page_size: int = 10) -> dict[str, Any]:
+    def list_public_entries(
+        self,
+        path: str = "",
+        page: int = 1,
+        page_size: int = 10,
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
         query = f"/internal/runtime-manager/public/files/list?page={page}&pageSize={page_size}"
         if path:
             query += f"&path={quote(path, safe='')}"
+        if user_id:
+            query += f"&userId={quote(user_id, safe='')}"
         return self._request("GET", query)
 
-    def upload_public_file(self, path: str, content: bytes, filename: str, overwrite: bool) -> dict[str, Any]:
+    def upload_public_file(
+        self,
+        path: str,
+        content: bytes,
+        filename: str,
+        overwrite: bool,
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
         data: dict[str, Any] = {"path": path, "overwrite": str(bool(overwrite)).lower()}
+        if user_id:
+            data["userId"] = user_id
         return self._request_multipart(
             "/internal/runtime-manager/public/files/upload",
             data=data,
             files={"file": (filename, content, "application/octet-stream")},
         )
 
-    def download_public_file(self, path: str) -> tuple[bytes, dict[str, str]]:
+    def download_public_file(self, path: str, user_id: str | None = None) -> tuple[bytes, dict[str, str]]:
         query = f"/internal/runtime-manager/public/files/download?path={quote(path, safe='')}"
+        if user_id:
+            query += f"&userId={quote(user_id, safe='')}"
         return self._request_bytes("GET", query)
 
-    def delete_public_path(self, path: str) -> None:
+    def delete_public_path(self, path: str, user_id: str | None = None) -> None:
         query = f"/internal/runtime-manager/public/files/delete?path={quote(path, safe='')}"
+        if user_id:
+            query += f"&userId={quote(user_id, safe='')}"
         self._request("DELETE", query)
 
-    def mkdir_public_dir(self, path: str) -> None:
-        self._request_form("/internal/runtime-manager/public/files/mkdir", data={"path": path})
+    def mkdir_public_dir(self, path: str, user_id: str | None = None) -> None:
+        data: dict[str, Any] = {"path": path}
+        if user_id:
+            data["userId"] = user_id
+        self._request_form("/internal/runtime-manager/public/files/mkdir", data=data)
