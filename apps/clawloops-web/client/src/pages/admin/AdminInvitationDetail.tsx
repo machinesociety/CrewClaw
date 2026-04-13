@@ -65,6 +65,27 @@ const ROLE_LABELS: Record<string, string> = {
   workspace_admin: '工作区管理员',
 };
 
+function fallbackCopyToClipboard(text: string): void {
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  textarea.style.top = '-9999px';
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+
+  try {
+    document.execCommand('copy');
+    toast.success('邀请链接已复制');
+  } catch (err) {
+    toast.error('复制失败，请手动复制链接');
+    console.error('复制失败:', err);
+  } finally {
+    document.body.removeChild(textarea);
+  }
+}
+
 function AdminInvitationDetailContent() {
   const { invitationId } = useParams<{ invitationId: string }>();
   const [, navigate] = useLocation();
@@ -118,6 +139,25 @@ function AdminInvitationDetailContent() {
       toast.error(isAppError(e) ? e.message : '重发失败');
     } finally {
       setActionLoading(null);
+    }
+  };
+
+  const handleCopyInviteLink = () => {
+    if (!invitation) return;
+
+    const inviteUrl = `${window.location.origin}/invite/${invitation.invitationId}`;
+
+    // 方法1：尝试使用 Clipboard API
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(inviteUrl).then(() => {
+        toast.success('邀请链接已复制');
+      }).catch(() => {
+        // 方法2：使用传统方式作为后备
+        fallbackCopyToClipboard(inviteUrl);
+      });
+    } else {
+      // 方法2：使用传统方式
+      fallbackCopyToClipboard(inviteUrl);
     }
   };
 
@@ -346,17 +386,14 @@ function AdminInvitationDetailContent() {
               <CardContent>
                 <div className="rounded-lg bg-muted/20 border border-border p-3">
                   <p className="text-xs font-mono text-muted-foreground break-all">
-                    {window.location.origin}/invite/{invitation.invitationId}
+                    {typeof window !== 'undefined' ? window.location.origin : ''}/invite/{invitation.invitationId}
                   </p>
                 </div>
                 <Button
                   variant="ghost"
                   size="sm"
                   className="w-full mt-2 gap-2 text-xs"
-                  onClick={() => {
-                    navigator.clipboard.writeText(`${window.location.origin}/invite/${invitation.invitationId}`);
-                    toast.success('邀请链接已复制');
-                  }}
+                  onClick={handleCopyInviteLink}
                 >
                   复制邀请链接
                 </Button>
