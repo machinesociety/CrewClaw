@@ -12,6 +12,11 @@ def test_model_service_list_models():
     assert all(isinstance(m, Model) for m in models)
     assert {m.source for m in models} == {ModelSource.SHARED}
     assert all(m.user_visible is True for m in models)
+    assert {m.model_id for m in models} == {
+        "ollama-qwen2.5-7b-free",
+        "qwen-max-proxy",
+        "gpt-4-mini-paid",
+    }
 
 
 def test_model_service_admin_update_affects_visibility():
@@ -33,11 +38,18 @@ def test_model_service_admin_update_affects_visibility():
     assert updated.default_provider_credential_id == "pc_001"
 
     user_models = service.list_models_for_user("u_001")
-    assert len(user_models) == 1
-    assert user_models[0].model_id == "qwen-max-proxy"
+    assert len(user_models) == 2
+    assert {model.model_id for model in user_models} == {
+        "ollama-qwen2.5-7b-free",
+        "qwen-max-proxy",
+    }
     admin_models = service.list_models_for_admin()
-    assert len(admin_models) == 2
-    assert {m.model_id for m in admin_models} == {"qwen-max-proxy", "gpt-4-mini-paid"}
+    assert len(admin_models) == 3
+    assert {m.model_id for m in admin_models} == {
+        "ollama-qwen2.5-7b-free",
+        "qwen-max-proxy",
+        "gpt-4-mini-paid",
+    }
 
 
 def test_prioritize_models_respects_preferred_default_order():

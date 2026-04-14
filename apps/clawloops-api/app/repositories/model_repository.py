@@ -46,6 +46,17 @@ class InMemoryModelRepository:
     def __init__(self) -> None:
         # model_id 必须与 LiteLLM model_list.model_name 一致，便于与网关 /v1/models 取交集。
         self._models: dict[str, Model] = {
+            "ollama-qwen2.5-7b-free": Model(
+                model_id="ollama-qwen2.5-7b-free",
+                name="Qwen 2.5 7B（免费）",
+                provider="ollama",
+                source=ModelSource.SHARED,
+                pricing_type=PricingType.FREE,
+                enabled=True,
+                user_visible=True,
+                default_route="litellm/ollama-qwen2.5-7b-free",
+                default_provider_credential_id=None,
+            ),
             "qwen-max-proxy": Model(
                 model_id="qwen-max-proxy",
                 name="通义 Qwen Max（免费）",
@@ -146,4 +157,3 @@ def reset_inmemory_model_repositories() -> None:
     _model_repo_singleton = None
     _provider_credential_repo_singleton = None
     _usage_repo_singleton = None
-
