@@ -13,6 +13,7 @@ import { useLocation, useSearch } from 'wouter';
 import {
   runtimeApi,
   modelsApi,
+  adminApi,
   workspaceApi,
   RuntimeStatusProjection,
   RuntimeTask,
@@ -346,14 +347,37 @@ function RuntimeCard({
 // Models Card
 // ============================================================
 
-function ModelsCard({ models, loading }: { models: Model[]; loading: boolean }) {
+function PricingBadge({ pricingType }: { pricingType?: Model['pricingType'] }) {
+  if (!pricingType) return null;
+  return (
+    <StatusBadge variant={pricingType === 'paid' ? 'warning' : 'neutral'}>
+      {pricingType === 'paid' ? '付费' : '免费'}
+    </StatusBadge>
+  );
+}
+
+function ModelsCard({
+  models,
+  loading,
+  canManage,
+  updatingId,
+  onToggleEnabled,
+}: {
+  models: Model[];
+  loading: boolean;
+  canManage: boolean;
+  updatingId: string | null;
+  onToggleEnabled: (modelId: string, enabled: boolean) => void;
+}) {
   return (
     <Card className="card-glow">
       <CardHeader className="pb-3">
         <CardTitle className="text-base flex items-center gap-2" style={{ fontFamily: 'Space Grotesk' }}>
           <Zap className="w-4.5 h-4.5 text-primary" />
           可用模型
-          <span className="text-xs text-muted-foreground font-normal ml-1">（只读）</span>
+          {!canManage && (
+            <span className="text-xs text-muted-foreground font-normal ml-1">（只读）</span>
+          )}
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -381,12 +405,25 @@ function ModelsCard({ models, loading }: { models: Model[]; loading: boolean }) 
                   )}
                 </div>
                 <div className="flex items-center gap-2">
+                  <PricingBadge pricingType={model.pricingType} />
                   {model.isDefault && (
                     <StatusBadge variant="info">默认</StatusBadge>
                   )}
-                  <StatusBadge variant={model.enabled ? 'success' : 'neutral'}>
-                    {model.enabled ? '启用' : '禁用'}
-                  </StatusBadge>
+                  {canManage ? (
+                    <Button
+                      size="sm"
+                      variant={model.enabled ? 'outline' : 'default'}
+                      className="h-7 text-xs"
+                      disabled={updatingId === model.modelId}
+                      onClick={() => onToggleEnabled(model.modelId, !(model.enabled ?? false))}
+                    >
+                      {model.enabled ? '下架' : '上架'}
+                    </Button>
+                  ) : (
+                    <StatusBadge variant={model.enabled ? 'success' : 'neutral'}>
+                      {model.enabled ? '启用' : '禁用'}
+                    </StatusBadge>
+                  )}
                 </div>
               </div>
             ))}
@@ -492,6 +529,7 @@ function DashboardContent() {
   // Models state
   const [models, setModels] = useState<Model[]>([]);
   const [modelsLoading, setModelsLoading] = useState(true);
+  const [modelsUpdatingId, setModelsUpdatingId] = useState<string | null>(null);
 
   // Task state
   const [activeTask, setActiveTask] = useState<RuntimeTask | null>(null);
@@ -526,12 +564,25 @@ function DashboardContent() {
 
   const loadModels = useCallback(async () => {
     try {
-      const res = await modelsApi.list();
+      const res = user?.isAdmin ? await adminApi.models.list() : await modelsApi.list();
       setModels(res.models || []);
     } catch {
       // Non-critical, silently fail
     } finally {
       setModelsLoading(false);
+    }
+  }, [user?.isAdmin]);
+
+  const handleToggleModelEnabled = useCallback(async (modelId: string, enabled: boolean) => {
+    setModelsUpdatingId(modelId);
+    try {
+      const updated = await adminApi.models.update(modelId, { enabled });
+      setModels((prev) => prev.map((m) => (m.modelId === modelId ? { ...m, ...updated } : m)));
+      toast.success(enabled ? '模型已上架' : '模型已下架');
+    } catch (e) {
+      toast.error(isAppError(e) ? e.message : '更新失败');
+    } finally {
+      setModelsUpdatingId(null);
     }
   }, []);
 
@@ -678,7 +729,13 @@ function DashboardContent() {
         />
 
         {/* Models Card */}
-        <ModelsCard models={models} loading={modelsLoading} />
+        <ModelsCard
+          models={models}
+          loading={modelsLoading}
+          canManage={!!user?.isAdmin}
+          updatingId={modelsUpdatingId}
+          onToggleEnabled={handleToggleModelEnabled}
+        />
 
         {/* User Info Card */}
         <Card className="card-glow">

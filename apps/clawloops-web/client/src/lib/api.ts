@@ -229,8 +229,14 @@ export interface Model {
   modelId: string;
   name: string;
   provider?: string;
+  pricingType?: 'free' | 'paid';
   enabled?: boolean;
+  /**
+   * Admin models API currently uses `userVisible`.
+   * Keep `visible` for backward compatibility with older payloads/UI code.
+   */
   visible?: boolean;
+  userVisible?: boolean;
   isDefault?: boolean;
   policy?: Record<string, unknown>;
 }
@@ -513,6 +519,11 @@ export const adminApi = {
     list: () => get<{ models: Model[] }>('/admin/models'),
     update: (modelId: string, data: Partial<Model>) =>
       put<Model>(`/admin/models/${modelId}`, data),
+    syncOpenRouter: () =>
+      post<{ fetched: number; created: number; updated: number }>(
+        '/admin/models/sync/openrouter',
+        {}
+      ),
   },
 
   // Provider Credentials

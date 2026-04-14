@@ -16,6 +16,7 @@ class ModelConfig:
 
     base_url: str
     models: list[str]
+    model_pricing: dict[str, str]
     gateway_access_token_ref: str
     config_render_version: str
 
@@ -24,6 +25,7 @@ class ModelConfig:
         return cls(
             base_url=resp.baseUrl,
             models=resp.models,
+            model_pricing=resp.modelPricing or {},
             gateway_access_token_ref=resp.gatewayAccessTokenRef,
             config_render_version=resp.configRenderVersion,
         )

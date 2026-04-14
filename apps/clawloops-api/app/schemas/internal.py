@@ -28,6 +28,7 @@ class RuntimeBindingStateUpdateRequest(BaseModel):
 class ModelConfigResponse(BaseModel):
     baseUrl: str
     models: list[str]
+    modelPricing: dict[str, str] = {}
     gatewayAccessTokenRef: str
     configRenderVersion: str
 

@@ -55,7 +55,13 @@ class RuntimeConfigRenderer:
                         "models": [
                             {
                                 "id": model_id,
-                                "name": model_id,
+                                # OpenClaw 配置校验不允许自定义字段（例如 provider）。
+                                # 用 `name` 显示“免费/付费”，`id` 保持不变以避免影响路由与调用。
+                                "name": (
+                                    f"{model_id}（免费）"
+                                    if model_config.model_pricing.get(model_id) == "free"
+                                    else f"{model_id}（付费）"
+                                ),
                                 "reasoning": False,
                                 "input": ["text"],
                                 "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
