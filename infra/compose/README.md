@@ -20,14 +20,18 @@ cp .env.example .env
 | `CLAWLOOPS_DOMAIN` | 主站域名（默认 `clawloops.localhost`），需与 Traefik 路由一致 |
 | `RUNTIME_MANAGER_DOMAIN` | Runtime Manager 子域（默认 `runtime-manager.clawloops.localhost`） |
 | `RUNTIME_PUBLIC_HOST` | 对外暴露给运行时的主机名（默认 `localhost`） |
-| `DASHSCOPE_API_KEY` | 可选：阿里云 DashScope API Key（当使用 `qwen-max-proxy` 等云模型时必填） |
+| `DASHSCOPE_API_KEY` | 可选：阿里云 DashScope API Key（当使用 `qwen-max-proxy` 等云模型时必填，填写原始 `sk-...` 即可） |
 | `OLLAMA_BASE_URL` | 可选：LiteLLM 访问 Ollama 的地址（默认 `http://host.docker.internal:11434`；若启用内置 Ollama 服务请改为 `http://ollama:11434`） |
 | `OPENROUTER_API_KEY` | 可选：OpenRouter API Key（当使用 `openrouter-*` 模型时必填） |
 | `LITELLM_MASTER_KEY` | API 与 clawloops-api 访问 LiteLLM 的密钥（默认 `sk-local-master`，生产请改掉） |
 | `CLAWLOOPS_MODEL_GATEWAY_BASE_URL` | 模型网关地址，Compose 内一般为 `http://litellm:4000` |
-| `CLAWLOOPS_MODEL_GATEWAY_DEFAULT_MODELS` | 默认模型名，需与 `litellm.config.yaml` 里 `model_name` 一致（例如 `qwen-max-proxy`、`ollama-qwen2.5-7b`、`openrouter-gpt-4o-mini`） |
+| `CLAWLOOPS_MODEL_GATEWAY_DEFAULT_MODELS` | 默认模型名，需与 `litellm.config.yaml` 里 `model_name` 一致（例如 `qwen-max-proxy`、`ollama-qwen2.5-7b-free`、`openrouter-glm-4.5-air-free`） |
 | `WEB_NPM_REGISTRY` / `WEB_PNPM_REGISTRY` | 前端构建用 npm 源 |
 | `API_APT_MIRROR` / `API_PIP_INDEX_URL` / `RUNTIME_MANAGER_PIP_INDEX_URL` | API 与 runtime-manager 构建时的 Debian / pip 源 |
+
+注意：
+- `docker compose` 会优先读取当前 shell 里已导出的同名环境变量；若宿主机上存在旧的 `DASHSCOPE_API_KEY` / `OPENROUTER_API_KEY`，可能覆盖 `infra/compose/.env`。
+- DashScope 这里使用原始 Key 即可，不需要写成 `dashscope:sk-...` 这类带 provider 前缀的格式。
 
 ## 2. 本机 hosts（使用 `.localhost` 时）
 
@@ -92,7 +96,7 @@ docker compose --profile prewarm pull
 
 ```bash
 OLLAMA_BASE_URL=http://ollama:11434
-CLAWLOOPS_MODEL_GATEWAY_DEFAULT_MODELS=ollama-qwen2.5-7b
+CLAWLOOPS_MODEL_GATEWAY_DEFAULT_MODELS=ollama-qwen2.5-7b-free
 ```
 
 2) 启动（带 `ollama` profile）：

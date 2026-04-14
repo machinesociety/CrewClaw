@@ -39,6 +39,9 @@ services:
       - CLAWLOOPS_LITELLM_API_KEY=${LITELLM_MASTER_KEY:-sk-local-master}
       - CLAWLOOPS_MODEL_GATEWAY_BASE_URL=${CLAWLOOPS_MODEL_GATEWAY_BASE_URL:-http://litellm:4000}
       - CLAWLOOPS_MODEL_GATEWAY_DEFAULT_MODELS=${CLAWLOOPS_MODEL_GATEWAY_DEFAULT_MODELS:-qwen-max-proxy}
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
     labels:
       - traefik.enable=true
       - traefik.http.routers.clawloops_api.rule=Host(`${CLAWLOOPS_DOMAIN}`) && PathPrefix(`/api`)
@@ -122,13 +125,13 @@ services:
     image: "ghcr.io/berriai/litellm:v1.81.3-stable"
     container_name: crewclaw-litellm
     restart: unless-stopped
+    entrypoint:
+      - /bin/sh
+      - -lc
     command:
-      - --config
-      - /app/config.yaml
-      - --host
-      - "0.0.0.0"
-      - --port
-      - "4000"
+      - |
+        export DASHSCOPE_API_KEY="$${DASHSCOPE_API_KEY#dashscope:}"
+        exec litellm --config /app/config.yaml --host 0.0.0.0 --port 4000
     environment:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-local-master}
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
