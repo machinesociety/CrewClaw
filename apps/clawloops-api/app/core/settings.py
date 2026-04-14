@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings
 
 
@@ -30,10 +31,55 @@ class AppSettings(BaseSettings):
     model_gateway_base_url: str | None = None
     model_gateway_default_models: str = "qwen-max-proxy"
     litellm_api_key: str = "sk-local-master"
+    dashscope_api_key: str | None = Field(default=None, validation_alias="DASHSCOPE_API_KEY")
+    provider_openrouter_api_key: str | None = Field(default=None, validation_alias="OPENROUTER_API_KEY")
+    ollama_base_url: str | None = Field(default=None, validation_alias="OLLAMA_BASE_URL")
+
+    # OpenRouter（用于管理员同步模型目录）
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_api_key: str | None = None
 
     def get_model_gateway_default_models(self) -> list[str]:
         models = [item.strip() for item in self.model_gateway_default_models.split(",")]
         return [item for item in models if item]
+
+    @staticmethod
+    def _normalize_api_key(value: str | None, *, provider_prefix: str | None = None) -> str | None:
+        if value is None:
+            return None
+
+        normalized = value.strip()
+        if provider_prefix and normalized.startswith(provider_prefix):
+            normalized = normalized[len(provider_prefix):].strip()
+        return normalized or None
+
+    def has_explicit_dashscope_support(self) -> bool:
+        normalized = self._normalize_api_key(self.dashscope_api_key, provider_prefix="dashscope:")
+        if normalized is None:
+            return True
+        return normalized.startswith("sk-")
+
+    def has_explicit_openrouter_support(self) -> bool:
+        normalized = self._normalize_api_key(self.provider_openrouter_api_key)
+        if normalized is None:
+            return True
+        return bool(normalized)
+
+    def has_explicit_ollama_support(self) -> bool:
+        if self.ollama_base_url is None:
+            return True
+        return bool(self.ollama_base_url.strip())
+
+    def is_provider_ready(self, provider: str | None) -> bool:
+        if provider in {None, ""}:
+            return True
+        if provider == "dashscope":
+            return self.has_explicit_dashscope_support()
+        if provider == "openrouter":
+            return self.has_explicit_openrouter_support()
+        if provider == "ollama":
+            return self.has_explicit_ollama_support()
+        return True
 
     class Config:
         env_prefix = "CLAWLOOPS_"
@@ -45,4 +91,3 @@ def get_settings() -> AppSettings:
     """提供带缓存的全局配置实例，供依赖注入使用。"""
 
     return AppSettings()
-

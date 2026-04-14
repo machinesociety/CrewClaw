@@ -1,4 +1,4 @@
-from app.domain.models import Model, ModelSource
+from app.domain.models import Model, ModelSource, PricingType
 from app.repositories.model_repository import InMemoryModelRepository
 from app.services.model_service import ModelService
 
@@ -19,19 +19,92 @@ def test_model_service_admin_update_affects_visibility():
     service = ModelService(model_repo)
 
     updated = service.update_model(
-        "gpt-4-mini",
+        "gpt-4-mini-paid",
         enabled=False,
         user_visible=False,
-        default_route="openai/alt-mini",
+        pricing_type=PricingType.FREE,
+        default_route="openrouter/alt-mini",
         default_provider_credential_id="pc_001",
     )
     assert updated.enabled is False
     assert updated.user_visible is False
-    assert updated.default_route == "openai/alt-mini"
+    assert updated.pricing_type == PricingType.FREE
+    assert updated.default_route == "openrouter/alt-mini"
     assert updated.default_provider_credential_id == "pc_001"
 
-    assert service.list_models_for_user("u_001") == []
+    user_models = service.list_models_for_user("u_001")
+    assert len(user_models) == 1
+    assert user_models[0].model_id == "qwen-max-proxy"
     admin_models = service.list_models_for_admin()
-    assert len(admin_models) == 1
-    assert admin_models[0].model_id == "gpt-4-mini"
+    assert len(admin_models) == 2
+    assert {m.model_id for m in admin_models} == {"qwen-max-proxy", "gpt-4-mini-paid"}
 
+
+def test_prioritize_models_respects_preferred_default_order():
+    service = ModelService(InMemoryModelRepository())
+    models = [
+        Model(
+            model_id="gpt-4-mini-paid",
+            name="GPT-4 Mini",
+            provider="openrouter",
+            source=ModelSource.SHARED,
+            pricing_type=PricingType.PAID,
+            enabled=True,
+            user_visible=True,
+            default_route="openrouter/openai/gpt-4o-mini",
+            default_provider_credential_id=None,
+        ),
+        Model(
+            model_id="qwen-max-proxy",
+            name="通义 Qwen Max（免费）",
+            provider="dashscope",
+            source=ModelSource.SHARED,
+            pricing_type=PricingType.FREE,
+            enabled=True,
+            user_visible=True,
+            default_route="litellm/qwen-max-proxy",
+            default_provider_credential_id=None,
+        ),
+    ]
+
+    prioritized = service.prioritize_models(models, ["qwen-max-proxy"])
+
+    assert [model.model_id for model in prioritized] == [
+        "qwen-max-proxy",
+        "gpt-4-mini-paid",
+    ]
+
+
+def test_filter_models_by_provider_readiness_excludes_unready_provider():
+    service = ModelService(InMemoryModelRepository())
+    models = [
+        Model(
+            model_id="qwen-max-proxy",
+            name="通义 Qwen Max（免费）",
+            provider="dashscope",
+            source=ModelSource.SHARED,
+            pricing_type=PricingType.FREE,
+            enabled=True,
+            user_visible=True,
+            default_route="litellm/qwen-max-proxy",
+            default_provider_credential_id=None,
+        ),
+        Model(
+            model_id="ollama-qwen2.5-7b-free",
+            name="Qwen 2.5 7B",
+            provider="ollama",
+            source=ModelSource.SHARED,
+            pricing_type=PricingType.FREE,
+            enabled=True,
+            user_visible=True,
+            default_route="litellm/ollama-qwen2.5-7b-free",
+            default_provider_credential_id=None,
+        ),
+    ]
+
+    filtered = service.filter_models_by_provider_readiness(
+        models,
+        lambda provider: provider != "dashscope",
+    )
+
+    assert [model.model_id for model in filtered] == ["ollama-qwen2.5-7b-free"]

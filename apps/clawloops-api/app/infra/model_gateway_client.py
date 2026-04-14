@@ -13,9 +13,20 @@ import sys
 
 
 class ModelGatewayClient:
-    def __init__(self, base_url: str, timeout_seconds: float = 2.0) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        timeout_seconds: float = 2.0,
+        api_key: str | None = None,
+    ) -> None:
         self._base_url = base_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
+        self._api_key = api_key
+
+    def _headers(self) -> dict[str, str]:
+        if not self._api_key:
+            return {}
+        return {"Authorization": f"Bearer {self._api_key}"}
 
     def list_models(self) -> list[str]:
         """
@@ -25,7 +36,7 @@ class ModelGatewayClient:
             return []
         url = f"{self._base_url}/v1/models"
         with httpx.Client(timeout=self._timeout_seconds) as client:
-            resp = client.get(url)
+            resp = client.get(url, headers=self._headers())
             resp.raise_for_status()
             payload: dict[str, Any] = resp.json() if resp.content else {}
 
@@ -62,4 +73,3 @@ class ModelGatewayClient:
             "gatewayAccessTokenRef": "token_ref_001",
             "configRenderVersion": "v1",
         }
-

@@ -193,12 +193,34 @@ def get_runtime_service(
 
     def get_model_config(user_id: str) -> ModelConfigResponse:
         model_base_url = settings.model_gateway_base_url or "http://litellm:4000"
-        preferred_models = settings.get_model_gateway_default_models()
+        # 以平台“已上架+可见”的模型为用户可用模型集合（单一事实源）。
+        # 这里仅输出模型 id 列表，具体是否网关可用仍以 /v1/models 交集为准。
+        from app.domain.models import PricingType
+        from app.repositories.model_repository import get_inmemory_model_repository
+        from app.services.model_service import ModelService
+
+        service = ModelService(model_repo=get_inmemory_model_repository())
+        governed_models = service.filter_models_by_provider_readiness(
+            service.list_models_for_user(user_id),
+            settings.is_provider_ready,
+        )
+        governed_models = service.prioritize_models(
+            governed_models,
+            settings.get_model_gateway_default_models(),
+        )
+        preferred_models = [m.model_id for m in governed_models]
 
         from app.infra.model_gateway_client import ModelGatewayClient
 
-        client = ModelGatewayClient(model_base_url)
+        client = ModelGatewayClient(model_base_url, api_key=settings.litellm_api_key)
         payload = client.get_user_model_config(user_id=user_id, preferred_models=preferred_models)
+        # 补充模型价格类型映射，供 OpenClaw UI 展示（免费/付费）
+        model_pricing = {
+            m.model_id: (PricingType.FREE.value if m.pricing_type == PricingType.FREE else PricingType.PAID.value)
+            for m in governed_models
+        }
+        if isinstance(payload, dict):
+            payload = {**payload, "modelPricing": model_pricing}
         return ModelConfigResponse(**payload)
 
     binding_port = UserRuntimeBindingServiceAdapter(
@@ -221,4 +243,3 @@ def get_runtime_service(
         config_renderer=renderer,
         route_host_suffix=settings.route_host_suffix,
     )
-
