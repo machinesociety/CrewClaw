@@ -10,19 +10,17 @@ from app.core.auth import AuthContext
 from app.core.dependencies import (
     get_db_session_dep,
     get_invitation_repository,
+    get_app_settings,
     get_runtime_service,
     get_user_service,
     require_active_user,
 )
 from app.core.errors import AccessDeniedError, InvitationNotFoundError, UserNotFoundError
+from app.domain.models import PricingType
 from app.domain.users import UserStatus
 from app.models.invitation import InvitationModel
 from app.models.user import UserModel, UserRuntimeBindingModel
 from app.repositories.invitation_repository import InvitationRepository
-from app.repositories.usage_repository import (
-    UsageRepository,
-    get_inmemory_usage_repository,
-)
 from app.repositories.model_repository import (
     ModelRepository,
     ProviderCredentialRepository,
@@ -32,6 +30,7 @@ from app.repositories.model_repository import (
     get_inmemory_usage_repository,
 )
 from app.schemas.admin import (
+    AdminUsagePeriod,
     AdminUsageSummaryResponse,
     AdminUserDetailResponse,
     AdminUserListResponse,
@@ -46,10 +45,15 @@ from app.schemas.credentials import (
     VerifyProviderCredentialResponse,
 )
 from app.schemas.models import AdminModelItem, AdminModelListResponse, UpdateAdminModelRequest
-from app.services.usage_service import UsageService
+from app.services.model_service import ModelService, ProviderCredentialService, UsageService
 from app.services.runtime_service import RuntimeService
 from app.services.user_service import UserService
-from app.services.model_service import ModelService, ProviderCredentialService
+
+
+class SyncOpenRouterModelsResponse(BaseModel):
+    fetched: int
+    created: int
+    updated: int
 
 
 router = APIRouter(tags=["admin"])
@@ -323,6 +327,7 @@ async def list_admin_models(
                 name=model.name,
                 provider=model.provider,
                 source=model.source.value,
+                pricingType=model.pricing_type.value,
                 enabled=model.enabled,
                 defaultRoute=model.default_route,
                 userVisible=model.user_visible,
@@ -344,6 +349,7 @@ async def update_admin_model(
         model_id,
         enabled=body.enabled,
         user_visible=body.userVisible,
+        pricing_type=None if body.pricingType is None else PricingType(body.pricingType),
         default_route=body.defaultRoute,
         default_provider_credential_id=body.defaultProviderCredentialId,
     )
@@ -352,11 +358,25 @@ async def update_admin_model(
         name=model.name,
         provider=model.provider,
         source=model.source.value,
+        pricingType=model.pricing_type.value,
         enabled=model.enabled,
         defaultRoute=model.default_route,
         userVisible=model.user_visible,
         defaultProviderCredentialId=model.default_provider_credential_id,
     )
+
+
+@router.post("/admin/models/sync/openrouter", response_model=SyncOpenRouterModelsResponse)
+async def sync_openrouter_models(
+    _: AuthContext = Depends(_require_admin),
+    settings=Depends(get_app_settings),
+    service: ModelService = Depends(get_model_service),
+) -> SyncOpenRouterModelsResponse:
+    stats = service.sync_openrouter_models(
+        openrouter_base_url=settings.openrouter_base_url,
+        openrouter_api_key=settings.openrouter_api_key,
+    )
+    return SyncOpenRouterModelsResponse(**stats)
 
 
 @router.get("/admin/provider-credentials", response_model=ProviderCredentialListResponse)
@@ -429,9 +449,16 @@ async def get_admin_usage_summary(
     service: UsageService = Depends(get_usage_service),
 ) -> AdminUsageSummaryResponse:
     summary = service.get_total_usage()
+    now = datetime.now(timezone.utc)
+    start = now - timedelta(days=30)
     return AdminUsageSummaryResponse(
+        totalRequests=0,
         totalTokens=summary.total_tokens,
         usedTokens=summary.used_tokens,
+        totalCost=0.0,
+        byModel=[],
+        byUser=[],
+        period=AdminUsagePeriod(from_=start.isoformat(), to=now.isoformat()),
     )
 
 

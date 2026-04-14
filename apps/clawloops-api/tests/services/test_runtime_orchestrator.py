@@ -54,7 +54,8 @@ class FakeModelConfigPort:
     def get_user_model_config(self, user_id: str) -> ModelConfig:
         return ModelConfig(
             base_url="http://litellm:4000",
-            models=["gpt-4-mini"],
+            models=["qwen-max-proxy"],
+            model_pricing={"qwen-max-proxy": "free"},
             gateway_access_token_ref="token_ref_001",
             config_render_version="v1",
         )
@@ -218,4 +219,3 @@ def test_delete_respects_retention_policy_and_marks_deleted():
     assert runtime_manager.delete_calls == [
         ("u_001", binding_port.binding.runtimeId, "wipe_workspace")
     ]
-

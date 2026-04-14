@@ -61,7 +61,8 @@ class _FakeModelConfigPort:
     def get_user_model_config(self, user_id: str) -> ModelConfig:
         return ModelConfig(
             base_url="http://litellm:4000",
-            models=["gpt-4-mini"],
+            models=["qwen-max-proxy"],
+            model_pricing={"qwen-max-proxy": "free"},
             gateway_access_token_ref="token_ref_001",
             config_render_version="v1",
         )
@@ -177,4 +178,3 @@ def test_module6_full_smoke_flow_login_to_workspace_entry(client, app):
         assert workspace_body["runtimeId"] in (None, runtime_id)
     finally:
         app.dependency_overrides.pop(get_runtime_service, None)
-

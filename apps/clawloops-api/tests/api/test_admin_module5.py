@@ -206,21 +206,22 @@ def test_admin_can_manage_models_provider_credentials_and_usage(client, issue_se
         models_resp = client.get("/api/v1/admin/models")
         assert models_resp.status_code == status.HTTP_200_OK
         models = models_resp.json()["models"]
-        assert any(model["modelId"] == "gpt-4-mini" for model in models)
+        assert any(model["modelId"] == "qwen-max-proxy" for model in models)
+        assert any(model["modelId"] == "gpt-4-mini-paid" for model in models)
 
         update_resp = client.put(
-            "/api/v1/admin/models/gpt-4-mini",
+            "/api/v1/admin/models/gpt-4-mini-paid",
             json={
                 "enabled": True,
                 "userVisible": False,
-                "defaultRoute": "openai/gpt-4-mini-alt",
+                "defaultRoute": "openrouter/openai/gpt-4o-mini-alt",
                 "defaultProviderCredentialId": "pc_manual",
             },
         )
         assert update_resp.status_code == status.HTTP_200_OK
         updated = update_resp.json()
         assert updated["userVisible"] is False
-        assert updated["defaultRoute"] == "openai/gpt-4-mini-alt"
+        assert updated["defaultRoute"] == "openrouter/openai/gpt-4o-mini-alt"
 
         create_cred_resp = client.post(
             "/api/v1/admin/provider-credentials",
@@ -257,4 +258,3 @@ def test_admin_can_manage_models_provider_credentials_and_usage(client, issue_se
         assert delete_resp.status_code == status.HTTP_204_NO_CONTENT
     finally:
         client.app.dependency_overrides.clear()
-

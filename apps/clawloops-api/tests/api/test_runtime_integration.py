@@ -63,7 +63,8 @@ class FakeModelConfigPort:
     def get_user_model_config(self, user_id: str) -> ModelConfig:
         return ModelConfig(
             base_url="http://litellm:4000",
-            models=["gpt-4-mini"],
+            models=["qwen-max-proxy"],
+            model_pricing={"qwen-max-proxy": "free"},
             gateway_access_token_ref="token_ref_001",
             config_render_version="v1",
         )
@@ -178,4 +179,3 @@ def test_half_main_flow_login_sync_ensure_start_and_query_task(client, app):
         assert task_body["status"] in ("running", "succeeded", "failed")
     finally:
         app.dependency_overrides.pop(get_runtime_service, None)
-

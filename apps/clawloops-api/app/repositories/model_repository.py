@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from app.domain.credentials import ProviderCredential, ProviderCredentialStatus
-from app.domain.models import Model, ModelSource, UsageSummary
+from app.domain.models import Model, ModelSource, PricingType, UsageSummary
 
 
 class ModelRepository(Protocol):
@@ -44,17 +44,30 @@ class UsageRepository(Protocol):
 
 class InMemoryModelRepository:
     def __init__(self) -> None:
+        # model_id 必须与 LiteLLM model_list.model_name 一致，便于与网关 /v1/models 取交集。
         self._models: dict[str, Model] = {
-            "gpt-4-mini": Model(
-                model_id="gpt-4-mini",
-                name="GPT-4 Mini",
-                provider="openai",
+            "qwen-max-proxy": Model(
+                model_id="qwen-max-proxy",
+                name="通义 Qwen Max（免费）",
+                provider="dashscope",
                 source=ModelSource.SHARED,
+                pricing_type=PricingType.FREE,
                 enabled=True,
                 user_visible=True,
-                default_route="openai/gpt-4-mini",
+                default_route="litellm/qwen-max-proxy",
                 default_provider_credential_id=None,
-            )
+            ),
+            "gpt-4-mini-paid": Model(
+                model_id="gpt-4-mini-paid",
+                name="GPT-4 Mini",
+                provider="openrouter",
+                source=ModelSource.SHARED,
+                pricing_type=PricingType.PAID,
+                enabled=True,
+                user_visible=True,
+                default_route="openrouter/openai/gpt-4o-mini",
+                default_provider_credential_id=None,
+            ),
         }
 
     def list_models(self) -> list[Model]:
@@ -133,5 +146,4 @@ def reset_inmemory_model_repositories() -> None:
     _model_repo_singleton = None
     _provider_credential_repo_singleton = None
     _usage_repo_singleton = None
-
 

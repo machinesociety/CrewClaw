@@ -91,8 +91,9 @@ class UsageService:
         return AdminUsageSummaryResponse(
             totalRequests=total_requests,
             totalTokens=total_tokens,
+            usedTokens=total_tokens,
             totalCost=total_cost,
             byModel=by_model,
             byUser=by_user,
-            period=period
+            period=period,
         )

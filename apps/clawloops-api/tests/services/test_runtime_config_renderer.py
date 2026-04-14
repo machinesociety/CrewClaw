@@ -18,7 +18,8 @@ def test_runtime_config_renderer_disables_device_pairing():
     )
     model = ModelConfig(
         base_url="http://litellm:4000",
-        models=["gpt-4-mini"],
+        models=["qwen-max-proxy"],
+        model_pricing={"qwen-max-proxy": "free"},
         gateway_access_token_ref="token_ref_001",
         config_render_version="v1",
     )
@@ -43,7 +44,8 @@ def test_runtime_config_renderer_uses_injected_litellm_api_key():
     )
     model = ModelConfig(
         base_url="http://litellm:4000",
-        models=["gpt-4-mini"],
+        models=["qwen-max-proxy"],
+        model_pricing={"qwen-max-proxy": "free"},
         gateway_access_token_ref="token_ref_001",
         config_render_version="v1",
     )
