@@ -2,11 +2,36 @@
 
 ## 用法
 
-## 国内没有 VPN 用户（镜像问题）
+## 国内没有VPN用户，需要解决镜像问题
 
-- 现在脚本会自动处理 Docker 镜像源，不必手工改 `/etc/docker/daemon.json`。
-- 脚本会自动探测可达镜像源，写入 `registry-mirrors`，并自动重启 Docker。
-- 如果镜像源都不可达，脚本会给出离线导入提示（`docker save` / `docker load`）。
+- 如果是国内，没有挂载VPN，则需要在执行一键启动命令前，使用目前可用的镜像站：
+
+```bash
+sudo nano /etc/docker/daemon.json
+
+
+#将上述文档写入以下内容（JSON格式，如果文件不存在则新建）：
+{
+  "registry-mirrors": [
+    "https://docker.m.daocloud.io",
+    "https://dockerproxy.com",
+    "https://docker.unsee.tech",
+    "https://docker.udayun.com",
+    "https://docker.anyhub.us.kg"
+  ]
+}
+
+```
+
+<br />
+
+- **重启docker服务**：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+
+```
 
 <br />
 
@@ -54,13 +79,11 @@ bash /path/to/CrewClaw/oneclick/start-crewclaw.sh /path/to/CrewClaw
 
 - 自动检测并安装 Docker + Docker Compose plugin（Ubuntu）。
 - 自动启动 Docker 服务并校验可用。
-- 自动探测并写入可达的 Docker 镜像源（含 DNS），失败时给出离线导入提示。
 - 自动识别服务器主 IP，并更新 `infra/compose/.env`：
   - `CLAWLOOPS_DOMAIN=clawloops.<IP>.nip.io`
   - `RUNTIME_MANAGER_DOMAIN=runtime-manager.<IP>.nip.io`
   - `RUNTIME_PUBLIC_HOST=<IP>`
 - 尝试更新 `infra/traefik/dynamic/middlewares.yml` 中的旧 IP（若存在）。
-- 预检构建依赖基础镜像（`node:22.12.0-alpine`、`python:3.12.8-slim`）和 Runtime 镜像。
 - 执行 `docker compose up -d --build` 拉起服务。
 
 ## 常见问题与排错
@@ -178,6 +201,10 @@ RUNTIME_MANAGER_PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 
 <br />
 
+若推荐处理方式都无法解决，可尝试以下方法：
+搭建VPN连接，确保服务器与公网的网络连接稳定 或者 多点几次！！！
+
+<br />
 六、当出现下载超时，需要执行
 
 1、重新加载系统的管理配置
@@ -204,3 +231,4 @@ docker info | grep -A 5 "Registry Mirrors"
 
 - 你必须在 `infra/compose/.env` 里填好 `DASHSCOPE_API_KEY`，否则 LiteLLM 调用 DashScope 会返回 500。
 - 不要把真实 API Key（例如 DashScope/OpenAI/Anthropic）提交到仓库；建议只在部署机的 `.env` 里配置，并限制文件权限。
+

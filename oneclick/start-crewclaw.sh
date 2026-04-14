@@ -1,21 +1,5 @@
 #!/usr/bin/env bash
-# 如果误用 sh 执行，自动切回 bash，避免 dash 不支持语法导致异常。
-if [[ -z "${BASH_VERSION:-}" ]]; then
-  exec /usr/bin/env bash "$0" "$@"
-fi
-
-set -eu
-set -o pipefail
-
-DEFAULT_RUNTIME_IMAGE_REF="ghcr.io/openclaw/openclaw@sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02"
-DEFAULT_NODE_IMAGE_REF="node:22.12.0-alpine"
-DEFAULT_PYTHON_IMAGE_REF="python:3.12.8-slim"
-REGISTRY_MIRROR_CANDIDATES=(
-  "https://dockerproxy.com"
-  "https://hub-mirror.c.163.com"
-  "https://mirror.baidubce.com"
-  "https://docker.m.daocloud.io"
-)
+set -euo pipefail
 
 REPO_DIR="${1:-$(pwd)}"
 if [[ ! -f "$REPO_DIR/infra/compose/docker-compose.yml" ]]; then
@@ -87,64 +71,6 @@ ensure_docker_running() {
   fi
 }
 
-mirror_reachable() {
-  local mirror="$1"
-  local code
-  code="$(curl -L -sS --connect-timeout 3 --max-time 6 -o /dev/null -w '%{http_code}' "${mirror%/}/v2/" || true)"
-  [[ "$code" =~ ^(200|401|403|404)$ ]]
-}
-
-configure_docker_mirrors() {
-  sudo_ok
-  local daemon_file="/etc/docker/daemon.json"
-  local tmp_file
-  tmp_file="$(mktemp)"
-  local -a selected=()
-  local m
-  for m in "${REGISTRY_MIRROR_CANDIDATES[@]}"; do
-    if mirror_reachable "$m"; then
-      selected+=("$m")
-    fi
-  done
-
-  if [[ "${#selected[@]}" -eq 0 ]]; then
-    echo "未探测到可达镜像源，将写入备用镜像列表；如果网络受限请使用离线镜像导入。"
-    selected=("${REGISTRY_MIRROR_CANDIDATES[@]}")
-  else
-    echo "可达镜像源：${selected[*]}"
-  fi
-
-  python3 - "$daemon_file" "$tmp_file" "${selected[@]}" <<'PY'
-import json, os, sys
-daemon_file = sys.argv[1]
-tmp_file = sys.argv[2]
-mirrors = sys.argv[3:]
-data = {}
-if os.path.exists(daemon_file):
-    try:
-        with open(daemon_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception:
-        data = {}
-data["registry-mirrors"] = mirrors
-data["dns"] = ["223.5.5.5", "114.114.114.114", "8.8.8.8"]
-with open(tmp_file, "w", encoding="utf-8") as f:
-    json.dump(data, f, ensure_ascii=False, indent=2)
-    f.write("\n")
-PY
-
-  if [[ -f "$daemon_file" ]] && sudo cmp -s "$daemon_file" "$tmp_file"; then
-    rm -f "$tmp_file"
-    return 0
-  fi
-
-  sudo mv -f "$tmp_file" "$daemon_file"
-  sudo chmod 644 "$daemon_file"
-  sudo systemctl daemon-reload
-  sudo systemctl restart docker
-  ensure_docker_running
-}
-
 primary_ip() {
   ip route get 1 2>/dev/null | awk '{print $(NF-2);exit}'
 }
@@ -190,78 +116,6 @@ update_env_file() {
   else
     echo "RUNTIME_PUBLIC_HOST=${ip}" >>"$env_file"
   fi
-
-  if ! grep -qE '^\s*RUNTIME_OPENCLAW_IMAGE_REF=' "$env_file"; then
-    echo "RUNTIME_OPENCLAW_IMAGE_REF=${DEFAULT_RUNTIME_IMAGE_REF}" >>"$env_file"
-  fi
-
-  echo "$env_file"
-}
-
-get_env_value() {
-  local env_file="$1"
-  local key="$2"
-  local value
-  value="$(grep -E "^${key}=" "$env_file" | tail -n 1 | cut -d'=' -f2- || true)"
-  value="${value%\"}"
-  value="${value#\"}"
-  echo "$value"
-}
-
-ensure_runtime_image_available() {
-  local env_file="$1"
-  local image_ref
-  image_ref="$(get_env_value "$env_file" "RUNTIME_OPENCLAW_IMAGE_REF")"
-  if [[ -z "$image_ref" ]]; then
-    image_ref="$DEFAULT_RUNTIME_IMAGE_REF"
-  fi
-
-  echo "检查 Runtime 镜像：$image_ref"
-  if sudo docker image inspect "$image_ref" >/dev/null 2>&1; then
-    echo "已存在本地镜像，跳过拉取。"
-    return 0
-  fi
-
-  echo "本地不存在，尝试拉取镜像..."
-  if sudo docker pull "$image_ref"; then
-    echo "镜像拉取成功。"
-    return 0
-  fi
-
-  echo "无法拉取 Runtime 镜像：$image_ref"
-  echo "如果当前网络无法访问镜像仓库，请先在可联网机器导出镜像，再在本机导入："
-  echo "  1) docker save -o openclaw.tar <可用镜像名>"
-  echo "  2) 在本机执行：docker load -i openclaw.tar"
-  echo "  3) 如需内网镜像，请在 $env_file 设置 RUNTIME_OPENCLAW_IMAGE_REF=<内网镜像地址>"
-  exit 1
-}
-
-ensure_image_available() {
-  local image_ref="$1"
-  local image_name="$2"
-
-  echo "检查基础镜像（${image_name}）：$image_ref"
-  if sudo docker image inspect "$image_ref" >/dev/null 2>&1; then
-    echo "已存在本地镜像，跳过拉取。"
-    return 0
-  fi
-
-  if sudo docker pull "$image_ref"; then
-    echo "镜像拉取成功：$image_ref"
-    return 0
-  fi
-
-  echo "无法拉取基础镜像：$image_ref"
-  echo "建议先在可联网机器导出并在本机导入："
-  echo "  1) docker pull $image_ref"
-  echo "  2) docker save -o ${image_name}.tar $image_ref"
-  echo "  3) 本机执行：docker load -i ${image_name}.tar"
-  exit 1
-}
-
-ensure_build_base_images_available() {
-  ensure_image_available "$DEFAULT_NODE_IMAGE_REF" "node-22.12.0-alpine"
-  ensure_image_available "$DEFAULT_PYTHON_IMAGE_REF" "python-3.12.8-slim"
 }
 
 update_traefik_dynamic_routes() {
@@ -301,7 +155,6 @@ compose_up() {
 main() {
   install_docker
   ensure_docker_running
-  configure_docker_mirrors
 
   local ip
   ip="$(primary_ip)"
@@ -310,11 +163,8 @@ main() {
     exit 1
   fi
 
-  local env_file
-  env_file="$(update_env_file "$ip")"
+  update_env_file "$ip"
   update_traefik_dynamic_routes "$ip"
-  ensure_build_base_images_available
-  ensure_runtime_image_available "$env_file"
   compose_up
 
   echo "启动完成。"
