@@ -54,7 +54,7 @@ class InMemoryModelRepository:
                 pricing_type=PricingType.FREE,
                 enabled=True,
                 user_visible=True,
-                default_route="litellm/ollama-qwen2.5-7b-free",
+                default_route="ollama/qwen2.5:7b",
                 default_provider_credential_id=None,
             ),
             "qwen-max-proxy": Model(
