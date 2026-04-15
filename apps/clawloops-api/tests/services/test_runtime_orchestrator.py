@@ -161,6 +161,7 @@ def test_ensure_running_creates_binding_and_calls_runtime_manager(tmp_path):
     assert len(runtime_manager.ensure_payloads) == 1
     payload = runtime_manager.ensure_payloads[0]
     assert payload["runtimeId"] == binding_port.binding.runtimeId
+    assert payload["routeHost"] == "rt-001.clawloops.test"
     
     # assert "configMount" in payload
     # assert "configFilePath" in payload["configMount"]
@@ -218,4 +219,3 @@ def test_delete_respects_retention_policy_and_marks_deleted():
     assert runtime_manager.delete_calls == [
         ("u_001", binding_port.binding.runtimeId, "wipe_workspace")
     ]
-

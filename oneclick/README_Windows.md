@@ -21,7 +21,8 @@ powershell -ExecutionPolicy Bypass -File "C:\path\to\CrewClaw\oneclick\start-cre
 - 自动识别 Windows 主机的 IP 地址，并更新 `infra/compose/.env`：
   - `CLAWLOOPS_DOMAIN=clawloops.<IP>.nip.io`
   - `RUNTIME_MANAGER_DOMAIN=runtime-manager.<IP>.nip.io`
-  - `RUNTIME_PUBLIC_HOST=<IP>`
+  - `RUNTIME_ROUTE_HOST_SUFFIX=rt.clawloops.<IP>.nip.io`
+  - `RUNTIME_BROWSER_SCHEME=http`
 - 执行 `docker compose up -d --build` 拉起服务
 
 ## 重要说明
@@ -47,7 +48,7 @@ powershell -ExecutionPolicy Bypass -File "C:\path\to\CrewClaw\oneclick\start-cre
 
 4. **访问方式**：
    - 服务启动后，可以通过 `http://clawloops.<IP>.nip.io` 访问 CrewClaw
-   - OpenClaw 运行时通过“宿主机随机端口”暴露（例如 `:32801`）
+   - OpenClaw 运行时通过子域名暴露（例如 `http://rt-u-123.rt.clawloops.<IP>.nip.io`）
 
 5. **防火墙设置**：
    - 若需要从网络其他设备访问，请确保 Windows 防火墙允许 Docker 相关端口的访问

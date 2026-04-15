@@ -2,11 +2,9 @@ name: crewclaw
 
 services:
   traefik:
-    image: traefik:v3.2.3
+    image: traefik:v3.6.7
     container_name: crewclaw-traefik
     restart: unless-stopped
-    environment:
-      - DOCKER_API_VERSION=1.44
     command:
       - --configFile=/etc/traefik/traefik.yml
     ports:
@@ -31,7 +29,7 @@ services:
     restart: unless-stopped
     environment:
       - PYTHONUNBUFFERED=1
-      - CLAWLOOPS_ROUTE_HOST_SUFFIX=${CLAWLOOPS_DOMAIN}
+      - CLAWLOOPS_ROUTE_HOST_SUFFIX=${RUNTIME_ROUTE_HOST_SUFFIX}
       - CLAWLOOPS_LITELLM_API_KEY=${LITELLM_MASTER_KEY:-sk-local-master}
       - CLAWLOOPS_MODEL_GATEWAY_BASE_URL=${CLAWLOOPS_MODEL_GATEWAY_BASE_URL:-http://litellm:4000}
       - CLAWLOOPS_MODEL_GATEWAY_DEFAULT_MODELS=${CLAWLOOPS_MODEL_GATEWAY_DEFAULT_MODELS:-qwen-max-proxy}
@@ -75,7 +73,7 @@ services:
       - PYTHONUNBUFFERED=1
       - RUNTIME_MANAGER_HOST=0.0.0.0
       - RUNTIME_MANAGER_PORT=18080
-      - RUNTIME_PUBLIC_HOST=${RUNTIME_PUBLIC_HOST:-localhost}
+      - RUNTIME_BROWSER_SCHEME=${RUNTIME_BROWSER_SCHEME:-https}
       - RUNTIME_OPENCLAW_NETWORK=clawloops_shared
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -98,10 +96,10 @@ services:
   prewarm-litellm:
     profiles:
       - prewarm
-    image: "ghcr.io/berriai/litellm:v1.81.3-stable"
+    image: "ghcr.io/berriai/litellm:v1.82.3-stable"
 
   litellm:
-    image: "ghcr.io/berriai/litellm:v1.81.3-stable"
+    image: "ghcr.io/berriai/litellm:v1.82.3-stable"
     container_name: crewclaw-litellm
     restart: unless-stopped
     command:

@@ -94,6 +94,7 @@ update_env_file() {
 
   local clawloops_domain="clawloops.${ip}.nip.io"
   local rm_domain="runtime-manager.${ip}.nip.io"
+  local runtime_route_suffix="rt.clawloops.${ip}.nip.io"
 
   if grep -qE '^\s*CLAWLOOPS_DOMAIN=' "$env_file"; then
     sed -i "s|^CLAWLOOPS_DOMAIN=.*|CLAWLOOPS_DOMAIN=${clawloops_domain}|" "$env_file"
@@ -107,10 +108,16 @@ update_env_file() {
     echo "RUNTIME_MANAGER_DOMAIN=${rm_domain}" >>"$env_file"
   fi
 
-  if grep -qE '^\s*RUNTIME_PUBLIC_HOST=' "$env_file"; then
-    sed -i "s|^RUNTIME_PUBLIC_HOST=.*|RUNTIME_PUBLIC_HOST=${ip}|" "$env_file"
+  if grep -qE '^\s*RUNTIME_ROUTE_HOST_SUFFIX=' "$env_file"; then
+    sed -i "s|^RUNTIME_ROUTE_HOST_SUFFIX=.*|RUNTIME_ROUTE_HOST_SUFFIX=${runtime_route_suffix}|" "$env_file"
   else
-    echo "RUNTIME_PUBLIC_HOST=${ip}" >>"$env_file"
+    echo "RUNTIME_ROUTE_HOST_SUFFIX=${runtime_route_suffix}" >>"$env_file"
+  fi
+
+  if grep -qE '^\s*RUNTIME_BROWSER_SCHEME=' "$env_file"; then
+    sed -i "s|^RUNTIME_BROWSER_SCHEME=.*|RUNTIME_BROWSER_SCHEME=http|" "$env_file"
+  else
+    echo "RUNTIME_BROWSER_SCHEME=http" >>"$env_file"
   fi
 }
 
@@ -155,7 +162,7 @@ main() {
   local ip
   ip="$(primary_ip)"
   if [[ -z "$ip" ]]; then
-    echo "无法自动识别服务器 IP，请手动设置 RUNTIME_PUBLIC_HOST 并更新路由域名。"
+    echo "无法自动识别服务器 IP，请手动设置 RUNTIME_ROUTE_HOST_SUFFIX 并更新路由域名。"
     exit 1
   fi
 
