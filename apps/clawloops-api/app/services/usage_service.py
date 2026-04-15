@@ -1,5 +1,5 @@
 from typing import List, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from app.repositories.usage_repository import UsageRepository, UsageRecord
 from app.schemas.admin import AdminUsageSummaryResponse, AdminUsageByModel, AdminUsageByUser, AdminUsagePeriod
 
@@ -79,8 +79,10 @@ class UsageService:
             for v in user_usage.values()
         ]
         
-        # 计算统计周期（最近30天）
-        now = datetime.utcnow()
+        # 计算统计周期（最近30天）- 使用北京时间
+        # 北京时间是 UTC+8
+        beijing_tz = timezone(timedelta(hours=8))
+        now = datetime.now(beijing_tz)
         start_date = now - timedelta(days=30)
         
         period = AdminUsagePeriod(

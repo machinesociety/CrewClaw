@@ -123,6 +123,22 @@ function AdminUsageContent() {
     return `$${n.toFixed(4)}`;
   }
 
+  // 格式化时间为北京时间
+  function formatBeijingTime(dateStr: string) {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    // 转换为北京时间并格式化
+    return date.toLocaleString('zh-CN', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+  }
+
   const CHART_COLORS = [
     'oklch(0.65 0.18 240)',
     'oklch(0.70 0.15 200)',
@@ -149,7 +165,7 @@ function AdminUsageContent() {
         title="Usage 汇总"
         description={
           summary?.period
-            ? `统计周期：${summary.period.from} ~ ${summary.period.to}`
+            ? `统计周期：${formatBeijingTime(summary.period.from)} ~ ${formatBeijingTime(summary.period.to)}`
             : 'API 使用量统计'
         }
         actions={

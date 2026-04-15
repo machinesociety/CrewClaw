@@ -369,7 +369,7 @@ function AdminInvitationDetailContent() {
                 {invitation.status !== 'pending' && (
                   <div className="rounded-lg bg-muted/20 border border-border px-4 py-3">
                     <p className="text-xs text-muted-foreground">
-                      此邀请已{STATUS_LABELS[invitation.status]}，无法执行操作。
+                      此邀请{STATUS_LABELS[invitation.status]}，无法执行操作。
                     </p>
                   </div>
                 )}

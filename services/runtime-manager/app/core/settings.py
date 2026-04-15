@@ -8,7 +8,9 @@ class Settings(BaseSettings):
     runtime_manager_port: int = 18080
     runtime_public_host: str = "localhost"
     runtime_openclaw_network: str = "clawloops_shared"
-    runtime_openclaw_image_ref: str = "ghcr.io/openclaw/openclaw@sha256:d65cc3d5fd0c8b1f752c2f70377843230112250c10e99c3b61769234c217c5db"
+    runtime_user_files_mount_dir: str = "/var/lib/clawloops/user-files"
+    runtime_user_files_host_path: str | None = None
+    runtime_openclaw_image_ref: str = "ghcr.io/openclaw/openclaw@sha256:7ea070b04d1e70811fe8ba15feaad5890b1646021b24e00f4795bd4587a594ed"
     runtime_openclaw_command: str = "node dist/index.js gateway --bind lan --port 18789 --allow-unconfigured"
     runtime_startup_grace_seconds: int = 60
     runtime_startup_poll_seconds: int = 1
@@ -23,3 +25,4 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
