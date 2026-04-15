@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends
 
 from app.core.auth import AuthContext
-from app.core.dependencies import get_app_settings, get_auth_context, require_active_user
+from app.core.dependencies import get_app_settings, get_auth_context, get_model_repository, require_active_user
 from app.infra.model_gateway_client import ModelGatewayClient
-from app.repositories.model_repository import get_inmemory_model_repository
+from app.repositories.model_repository import ModelRepository
 from app.schemas.models import ModelItem, ModelListResponse
 from app.services.model_service import ModelService
 
@@ -15,10 +15,11 @@ router = APIRouter(tags=["models"], dependencies=[Depends(require_active_user)])
 async def list_models(
     ctx: AuthContext = Depends(get_auth_context),
     settings=Depends(get_app_settings),
+    model_repo: ModelRepository = Depends(get_model_repository),
 ) -> ModelListResponse:
     model_base_url = settings.model_gateway_base_url or "http://litellm:4000"
     # 用户可见模型集合以平台治理为准，然后与网关真实可用模型取交集
-    service = ModelService(model_repo=get_inmemory_model_repository())
+    service = ModelService(model_repo=model_repo)
     governed = service.filter_models_by_provider_readiness(
         service.list_models_for_user(ctx.userId),
         settings.is_provider_ready,
@@ -30,6 +31,12 @@ async def list_models(
     preferred_models = [m.model_id for m in governed]
 
     client = ModelGatewayClient(model_base_url, api_key=settings.litellm_api_key)
+    service.ensure_openrouter_models_registered(
+        governed,
+        model_gateway_client=client,
+        openrouter_base_url=settings.openrouter_base_url,
+        openrouter_api_key=settings.provider_openrouter_api_key or settings.openrouter_api_key,
+    )
     payload = client.get_user_model_config(user_id=ctx.userId, preferred_models=preferred_models)
     models = payload.get("models", []) if isinstance(payload, dict) else []
     if not isinstance(models, list):

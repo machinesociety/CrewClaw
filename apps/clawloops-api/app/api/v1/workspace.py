@@ -106,4 +106,3 @@ async def redirect_workspace_entry(
         )
 
     return RedirectResponse(url=binding.browser_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
-

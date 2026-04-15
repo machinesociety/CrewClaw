@@ -16,6 +16,14 @@ model_list:
     litellm_params:
       model: openrouter/z-ai/glm-4.5-air:free
       api_key: os.environ/OPENROUTER_API_KEY
+  - model_name: openrouter-z-ai-glm-4-5-air-free
+    litellm_params:
+      model: openrouter/z-ai/glm-4.5-air:free
+      api_key: os.environ/OPENROUTER_API_KEY
+  - model_name: z-ai/glm-4.5-air:free
+    litellm_params:
+      model: openrouter/z-ai/glm-4.5-air:free
+      api_key: os.environ/OPENROUTER_API_KEY
   - model_name: gpt-4-mini-paid
     litellm_params:
       model: openrouter/openai/gpt-4o-mini
