@@ -219,8 +219,23 @@ def get_runtime_service(
             m.model_id: (PricingType.FREE.value if m.pricing_type == PricingType.FREE else PricingType.PAID.value)
             for m in governed_models
         }
+        resolved_models = payload.get("models", []) if isinstance(payload, dict) else []
+        resolved_model_ids = {
+            model_id
+            for model_id in resolved_models
+            if isinstance(model_id, str)
+        }
+        model_routes = {
+            m.model_id: (
+                m.default_route
+                if m.provider == "ollama" and m.default_route
+                else f"litellm/{m.model_id}"
+            )
+            for m in governed_models
+            if m.model_id in resolved_model_ids
+        }
         if isinstance(payload, dict):
-            payload = {**payload, "modelPricing": model_pricing}
+            payload = {**payload, "modelPricing": model_pricing, "modelRoutes": model_routes}
         return ModelConfigResponse(**payload)
 
     binding_port = UserRuntimeBindingServiceAdapter(
@@ -233,7 +248,10 @@ def get_runtime_service(
     runtime_manager_client = RuntimeManagerClient(base_url=base_url)
     runtime_manager_port = RuntimeManagerPortAdapter(runtime_manager_client)
 
-    renderer = RuntimeConfigRenderer(litellm_api_key=settings.litellm_api_key)
+    renderer = RuntimeConfigRenderer(
+        litellm_api_key=settings.litellm_api_key,
+        ollama_base_url=settings.ollama_base_url or "http://ollama:11434",
+    )
 
     return RuntimeService(
         binding_service=binding_port,

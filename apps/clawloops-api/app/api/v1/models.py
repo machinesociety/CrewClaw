@@ -44,7 +44,14 @@ async def list_models(
                 source="gateway",
                 pricingType=next((m.pricing_type.value for m in governed if m.model_id == model_id), None),
                 enabled=True,
-                defaultRoute=f"litellm/{model_id}",
+                defaultRoute=next(
+                    (
+                        m.default_route
+                        for m in governed
+                        if m.model_id == model_id and m.provider == "ollama" and m.default_route
+                    ),
+                    f"litellm/{model_id}",
+                ),
             )
             for model_id in models
         ]
