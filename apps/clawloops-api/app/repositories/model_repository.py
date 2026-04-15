@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from sqlalchemy.orm import Session
+
 from app.domain.credentials import ProviderCredential, ProviderCredentialStatus
 from app.domain.models import Model, ModelSource, PricingType, UsageSummary
+from app.models.model_catalog import GovernedModelCatalogModel
 
 
 class ModelRepository(Protocol):
@@ -46,39 +49,7 @@ class InMemoryModelRepository:
     def __init__(self) -> None:
         # model_id 必须与 LiteLLM model_list.model_name 一致，便于与网关 /v1/models 取交集。
         self._models: dict[str, Model] = {
-            "ollama-qwen2.5-7b-free": Model(
-                model_id="ollama-qwen2.5-7b-free",
-                name="Qwen 2.5 7B（免费）",
-                provider="ollama",
-                source=ModelSource.SHARED,
-                pricing_type=PricingType.FREE,
-                enabled=True,
-                user_visible=True,
-                default_route="ollama/qwen2.5:7b",
-                default_provider_credential_id=None,
-            ),
-            "qwen-max-proxy": Model(
-                model_id="qwen-max-proxy",
-                name="通义 Qwen Max（免费）",
-                provider="dashscope",
-                source=ModelSource.SHARED,
-                pricing_type=PricingType.FREE,
-                enabled=True,
-                user_visible=True,
-                default_route="litellm/qwen-max-proxy",
-                default_provider_credential_id=None,
-            ),
-            "gpt-4-mini-paid": Model(
-                model_id="gpt-4-mini-paid",
-                name="GPT-4 Mini",
-                provider="openrouter",
-                source=ModelSource.SHARED,
-                pricing_type=PricingType.PAID,
-                enabled=True,
-                user_visible=True,
-                default_route="openrouter/openai/gpt-4o-mini",
-                default_provider_credential_id=None,
-            ),
+            model.model_id: model for model in build_default_governed_models()
         }
 
     def list_models(self) -> list[Model]:
@@ -89,6 +60,128 @@ class InMemoryModelRepository:
 
     def save(self, model: Model) -> None:
         self._models[model.model_id] = model
+
+
+def build_default_governed_models() -> list[Model]:
+    return [
+        Model(
+            model_id="ollama-qwen2.5-7b-free",
+            name="Qwen 2.5 7B（免费）",
+            provider="ollama",
+            source=ModelSource.SHARED,
+            pricing_type=PricingType.FREE,
+            enabled=True,
+            user_visible=True,
+            default_route="ollama/qwen2.5:7b",
+            default_provider_credential_id=None,
+            upstream_model_id="qwen2.5:7b",
+        ),
+        Model(
+            model_id="qwen-max-proxy",
+            name="通义 Qwen Max（免费）",
+            provider="dashscope",
+            source=ModelSource.SHARED,
+            pricing_type=PricingType.FREE,
+            enabled=True,
+            user_visible=True,
+            default_route="litellm/qwen-max-proxy",
+            default_provider_credential_id=None,
+            upstream_model_id="dashscope/qwen3.5-plus",
+        ),
+        Model(
+            model_id="gpt-4-mini-paid",
+            name="GPT-4 Mini",
+            provider="openrouter",
+            source=ModelSource.SHARED,
+            pricing_type=PricingType.PAID,
+            enabled=True,
+            user_visible=True,
+            default_route="openrouter/openai/gpt-4o-mini",
+            default_provider_credential_id=None,
+            upstream_model_id="openai/gpt-4o-mini",
+        ),
+    ]
+
+
+class SqlAlchemyModelRepository:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+        self._ensure_seed_data()
+
+    def _ensure_seed_data(self) -> None:
+        existing_count = self._session.query(GovernedModelCatalogModel).count()
+        if existing_count > 0:
+            return
+        for model in build_default_governed_models():
+            self._session.add(self._to_row(model))
+        self._session.commit()
+
+    def list_models(self) -> list[Model]:
+        rows = (
+            self._session.query(GovernedModelCatalogModel)
+            .order_by(GovernedModelCatalogModel.id.asc())
+            .all()
+        )
+        return [self._to_domain(row) for row in rows]
+
+    def get_model(self, model_id: str) -> Model | None:
+        row = (
+            self._session.query(GovernedModelCatalogModel)
+            .filter(GovernedModelCatalogModel.model_id == model_id)
+            .one_or_none()
+        )
+        return None if row is None else self._to_domain(row)
+
+    def save(self, model: Model) -> None:
+        row = (
+            self._session.query(GovernedModelCatalogModel)
+            .filter(GovernedModelCatalogModel.model_id == model.model_id)
+            .one_or_none()
+        )
+        if row is None:
+            row = self._to_row(model)
+            self._session.add(row)
+        else:
+            row.name = model.name
+            row.provider = model.provider
+            row.source = model.source
+            row.pricing_type = model.pricing_type
+            row.enabled = model.enabled
+            row.user_visible = model.user_visible
+            row.default_route = model.default_route
+            row.default_provider_credential_id = model.default_provider_credential_id
+            row.upstream_model_id = model.upstream_model_id
+        self._session.commit()
+
+    @staticmethod
+    def _to_domain(row: GovernedModelCatalogModel) -> Model:
+        return Model(
+            model_id=row.model_id,
+            name=row.name,
+            provider=row.provider,
+            source=row.source,
+            pricing_type=row.pricing_type,
+            enabled=row.enabled,
+            user_visible=row.user_visible,
+            default_route=row.default_route,
+            default_provider_credential_id=row.default_provider_credential_id,
+            upstream_model_id=row.upstream_model_id,
+        )
+
+    @staticmethod
+    def _to_row(model: Model) -> GovernedModelCatalogModel:
+        return GovernedModelCatalogModel(
+            model_id=model.model_id,
+            name=model.name,
+            provider=model.provider,
+            source=model.source,
+            pricing_type=model.pricing_type,
+            enabled=model.enabled,
+            user_visible=model.user_visible,
+            default_route=model.default_route,
+            default_provider_credential_id=model.default_provider_credential_id,
+            upstream_model_id=model.upstream_model_id,
+        )
 
 
 class InMemoryProviderCredentialRepository:

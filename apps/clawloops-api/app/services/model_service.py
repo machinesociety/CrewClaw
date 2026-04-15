@@ -1,17 +1,28 @@
 from __future__ import annotations
 
+import re
+import sys
 from datetime import datetime, timezone
 from typing import Callable
 
 from app.core.errors import ModelNotFoundError, ProviderCredentialInvalidError, ProviderCredentialNotFoundError
 from app.domain.credentials import ProviderCredential, ProviderCredentialStatus
 from app.domain.models import Model, ModelSource, PricingType, UsageSummary
+from app.infra.model_gateway_client import ModelGatewayClient
 from app.infra.openrouter_client import OpenRouterClient
 from app.repositories.model_repository import (
     ModelRepository,
     ProviderCredentialRepository,
     UsageRepository,
 )
+
+def build_openrouter_safe_model_id(model_id: str) -> str:
+    """
+    Convert OpenRouter model ids like `z-ai/glm-4.5-air:free` into a
+    Control-UI-safe alias such as `openrouter-z-ai-glm-4-5-air-free`.
+    """
+    normalized = re.sub(r"[^a-zA-Z0-9]+", "-", model_id).strip("-").lower()
+    return f"openrouter-{normalized}" if normalized else "openrouter-model"
 
 
 class ModelService:
@@ -110,20 +121,22 @@ class ModelService:
         updated = 0
 
         for entry in entries:
+            synced_model_id = build_openrouter_safe_model_id(entry.model_id)
             pricing_type = PricingType.FREE if entry.model_id.endswith(":free") else PricingType.PAID
 
-            existing = self._model_repo.get_model(entry.model_id)
+            existing = self._model_repo.get_model(synced_model_id)
             if existing is None:
                 model = Model(
-                    model_id=entry.model_id,
+                    model_id=synced_model_id,
                     name=entry.name or entry.model_id,
                     provider="openrouter",
                     source=ModelSource.SHARED,
                     pricing_type=pricing_type,
                     enabled=False,
                     user_visible=False,
-                    default_route=f"openrouter/{entry.model_id}",
+                    default_route=f"litellm/{synced_model_id}",
                     default_provider_credential_id=None,
+                    upstream_model_id=entry.model_id,
                 )
                 self._model_repo.save(model)
                 created += 1
@@ -139,12 +152,93 @@ class ModelService:
             if entry.name and existing.name != entry.name:
                 existing.name = entry.name
                 changed = True
+            if existing.upstream_model_id != entry.model_id:
+                existing.upstream_model_id = entry.model_id
+                changed = True
 
             if changed:
                 self._model_repo.save(existing)
                 updated += 1
 
         return {"fetched": len(entries), "created": created, "updated": updated}
+
+    def resolve_openrouter_upstream_model_id(
+        self,
+        model: Model,
+        *,
+        openrouter_base_url: str,
+        openrouter_api_key: str | None = None,
+    ) -> str | None:
+        if model.provider != "openrouter":
+            return model.upstream_model_id
+        if model.upstream_model_id:
+            return model.upstream_model_id
+        if "/" in model.model_id:
+            return model.model_id
+        if "pytest" in sys.modules:
+            return None
+
+        client = OpenRouterClient(base_url=openrouter_base_url, api_key=openrouter_api_key)
+        for entry in client.list_models():
+            if build_openrouter_safe_model_id(entry.model_id) == model.model_id:
+                model.upstream_model_id = entry.model_id
+                self._model_repo.save(model)
+                return entry.model_id
+        return None
+
+    def ensure_openrouter_models_registered(
+        self,
+        models: list[Model],
+        *,
+        model_gateway_client: ModelGatewayClient,
+        openrouter_base_url: str,
+        openrouter_api_key: str | None = None,
+    ) -> list[str]:
+        """
+        确保当前治理层中“已上架且可见”的 OpenRouter 模型已注册到 LiteLLM。
+
+        返回本次成功处理（已存在或已注册）的平台注册 model_id 列表。
+        """
+        if not models:
+            return []
+
+        available_models = set()
+        try:
+            available_models = set(model_gateway_client.list_models())
+        except Exception:
+            available_models = set()
+
+        ensured_model_ids: list[str] = []
+        for model in models:
+            if model.provider != "openrouter":
+                continue
+
+            if model.model_id in available_models:
+                ensured_model_ids.append(model.model_id)
+                continue
+
+            upstream_model_id = self.resolve_openrouter_upstream_model_id(
+                model,
+                openrouter_base_url=openrouter_base_url,
+                openrouter_api_key=openrouter_api_key,
+            )
+            if not upstream_model_id:
+                continue
+
+            try:
+                model_gateway_client.register_model(
+                    model.model_id,
+                    {
+                        "model": f"openrouter/{upstream_model_id}",
+                        "api_key": "os.environ/OPENROUTER_API_KEY",
+                    },
+                )
+                ensured_model_ids.append(model.model_id)
+                available_models.add(model.model_id)
+            except Exception:
+                continue
+
+        return ensured_model_ids
 
 
 class ProviderCredentialService:

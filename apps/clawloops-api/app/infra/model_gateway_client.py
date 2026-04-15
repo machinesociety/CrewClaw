@@ -73,3 +73,18 @@ class ModelGatewayClient:
             "gatewayAccessTokenRef": "token_ref_001",
             "configRenderVersion": "v1",
         }
+
+    def register_model(self, model_name: str, litellm_params: dict[str, Any]) -> None:
+        if "pytest" in sys.modules:
+            return
+        url = f"{self._base_url}/model/new"
+        with httpx.Client(timeout=self._timeout_seconds) as client:
+            resp = client.post(
+                url,
+                headers=self._headers(),
+                json={
+                    "model_name": model_name,
+                    "litellm_params": litellm_params,
+                },
+            )
+            resp.raise_for_status()

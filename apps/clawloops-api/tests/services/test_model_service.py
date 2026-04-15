@@ -1,6 +1,6 @@
 from app.domain.models import Model, ModelSource, PricingType
 from app.repositories.model_repository import InMemoryModelRepository
-from app.services.model_service import ModelService
+from app.services.model_service import ModelService, build_openrouter_safe_model_id
 
 
 def test_model_service_list_models():
@@ -120,3 +120,89 @@ def test_filter_models_by_provider_readiness_excludes_unready_provider():
     )
 
     assert [model.model_id for model in filtered] == ["ollama-qwen2.5-7b-free"]
+
+
+def test_build_openrouter_safe_model_id_sanitizes_special_chars():
+    assert (
+        build_openrouter_safe_model_id("z-ai/glm-4.5-air:free")
+        == "openrouter-z-ai-glm-4-5-air-free"
+    )
+    assert (
+        build_openrouter_safe_model_id("google/gemma-3-27b-it:free")
+        == "openrouter-google-gemma-3-27b-it-free"
+    )
+
+
+def test_sync_openrouter_models_uses_safe_alias_for_glm_free(monkeypatch):
+    class _FakeEntry:
+        def __init__(self, model_id: str, name: str):
+            self.model_id = model_id
+            self.name = name
+
+    class _FakeClient:
+        def __init__(self, base_url: str, api_key: str | None = None) -> None:
+            _ = (base_url, api_key)
+
+        def list_models(self):
+            return [_FakeEntry("z-ai/glm-4.5-air:free", "Z.ai: GLM 4.5 Air (free)")]
+
+    monkeypatch.setattr("app.services.model_service.OpenRouterClient", _FakeClient)
+
+    model_repo = InMemoryModelRepository()
+    service = ModelService(model_repo)
+
+    stats = service.sync_openrouter_models(
+        openrouter_base_url="https://openrouter.ai/api/v1",
+        openrouter_api_key="sk-or-test",
+    )
+
+    synced = model_repo.get_model("openrouter-z-ai-glm-4-5-air-free")
+    assert stats == {"fetched": 1, "created": 1, "updated": 0}
+    assert synced is not None
+    assert synced.name == "Z.ai: GLM 4.5 Air (free)"
+    assert synced.provider == "openrouter"
+    assert synced.pricing_type == PricingType.FREE
+    assert synced.default_route == "litellm/openrouter-z-ai-glm-4-5-air-free"
+    assert synced.upstream_model_id == "z-ai/glm-4.5-air:free"
+
+
+def test_resolve_openrouter_upstream_model_id_uses_existing_safe_alias(monkeypatch):
+    class _FakeEntry:
+        def __init__(self, model_id: str, name: str):
+            self.model_id = model_id
+            self.name = name
+
+    class _FakeClient:
+        def __init__(self, base_url: str, api_key: str | None = None) -> None:
+            _ = (base_url, api_key)
+
+        def list_models(self):
+            return [_FakeEntry("z-ai/glm-4.5-air:free", "Z.ai: GLM 4.5 Air (free)")]
+
+    monkeypatch.setattr("app.services.model_service.OpenRouterClient", _FakeClient)
+
+    model_repo = InMemoryModelRepository()
+    service = ModelService(model_repo)
+    model = Model(
+        model_id="openrouter-z-ai-glm-4-5-air-free",
+        name="Z.ai: GLM 4.5 Air (free)",
+        provider="openrouter",
+        source=ModelSource.SHARED,
+        pricing_type=PricingType.FREE,
+        enabled=True,
+        user_visible=True,
+        default_route="litellm/openrouter-z-ai-glm-4-5-air-free",
+        default_provider_credential_id=None,
+    )
+    model_repo.save(model)
+
+    resolved = service.resolve_openrouter_upstream_model_id(
+        model,
+        openrouter_base_url="https://openrouter.ai/api/v1",
+        openrouter_api_key="sk-or-test",
+    )
+
+    assert resolved == "z-ai/glm-4.5-air:free"
+    persisted = model_repo.get_model("openrouter-z-ai-glm-4-5-air-free")
+    assert persisted is not None
+    assert persisted.upstream_model_id == "z-ai/glm-4.5-air:free"

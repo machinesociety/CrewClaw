@@ -11,6 +11,7 @@ from app.api.v1 import runtime as runtime_api
 from app.api.v1 import usage as usage_api
 from app.api.v1 import users as users_api
 from app.api.v1 import workspace as workspace_api
+from app.core.database import init_db
 from app.core.errors import AppError
 from app.core.logging import setup_logging
 from app.core.settings import get_settings
@@ -28,6 +29,10 @@ def create_app() -> FastAPI:
         version="0.1.0",
         description="ClawLoops 平台 MVP 控制面 API 服务。",
     )
+
+    @app.on_event("startup")
+    async def startup_init_db() -> None:
+        init_db()
 
     # 健康检查与根路径
     @app.get("/", tags=["meta"])
@@ -63,4 +68,3 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
-
