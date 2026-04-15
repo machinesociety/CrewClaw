@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import shutil
 import socket
 import time
@@ -36,16 +37,36 @@ class RuntimeExecutor:
     def _internal_endpoint(self, runtime_id: str) -> str:
         return f"http://rt-{runtime_id}:18789"
 
-    def _browser_url_from_container(self, container) -> str | None:
+    def _browser_url_from_route_host(self, route_host: str | None) -> str | None:
+        if not route_host:
+            return None
+        scheme = (self._settings.runtime_browser_scheme or "https").strip().lower()
+        if scheme not in {"http", "https"}:
+            scheme = "https"
+        return f"{scheme}://{route_host}"
+
+    def _route_host_from_container(self, container) -> str | None:
         container.reload()
-        ports = container.attrs.get("NetworkSettings", {}).get("Ports", {}) or {}
-        bindings = ports.get("18789/tcp")
-        if not bindings:
-            return None
-        host_port = bindings[0].get("HostPort")
-        if not host_port:
-            return None
-        return f"http://{self._settings.runtime_public_host}:{host_port}"
+        labels = container.attrs.get("Config", {}).get("Labels", {}) or {}
+        route_host = labels.get("clawloops.routeHost")
+        if isinstance(route_host, str) and route_host.strip():
+            return route_host.strip()
+        return None
+
+    def _router_name(self, runtime_id: str) -> str:
+        safe_runtime_id = re.sub(r"[^a-z0-9-]+", "-", runtime_id.lower()).strip("-")
+        safe_runtime_id = safe_runtime_id or "runtime"
+        return f"openclaw-{safe_runtime_id}"
+
+    def _with_traefik_labels(self, labels: dict[str, str], runtime_id: str, route_host: str) -> dict[str, str]:
+        router_name = self._router_name(runtime_id)
+        merged = dict(labels)
+        merged["clawloops.routeHost"] = route_host
+        merged["traefik.enable"] = "true"
+        merged[f"traefik.http.routers.{router_name}.rule"] = f"Host(`{route_host}`)"
+        merged[f"traefik.http.routers.{router_name}.entrypoints"] = "web"
+        merged[f"traefik.http.services.{router_name}.loadbalancer.server.port"] = "18789"
+        return merged
 
     def _list_managed(self, runtime_id: str):
         return self._docker.containers.list(
@@ -97,7 +118,7 @@ class RuntimeExecutor:
         container = self._docker.containers.create(
             image=self._settings.runtime_openclaw_image_ref,
             command=self._settings.runtime_openclaw_command.split(" "),
-            labels=labels,
+            labels=self._with_traefik_labels(labels, req.runtimeId, req.routeHost),
             environment={
                 "HOME": "/home/node",
                 "TERM": "xterm-256color",
@@ -188,9 +209,14 @@ class RuntimeExecutor:
                 container = existing_containers[0]
                 container.reload()
                 logger.info(f"Found existing container: {container.id}, status: {container.status}")
+                drifts = detect_drift(container, req, self._settings)
+                if drifts:
+                    logger.info(f"Detected drift on existing container: {','.join(drifts)}, removing and recreating")
+                    container.remove(force=True)
+                    container = None
                 
                 # 如果容器已停止，直接启动它
-                if container.status in {"exited", "created"}:
+                if container is not None and container.status in {"exited", "created"}:
                     logger.info("Starting existing stopped container")
                     try:
                         container.start()
@@ -214,9 +240,10 @@ class RuntimeExecutor:
                         container = None
                 else:
                     # 如果容器处于其他状态（如 restarting, paused, dead），删除并重建
-                    logger.info(f"Container in unexpected state: {container.status}, removing and recreating")
-                    container.remove(force=True)
-                    container = None
+                    if container is not None:
+                        logger.info(f"Container in unexpected state: {container.status}, removing and recreating")
+                        container.remove(force=True)
+                        container = None
             
             # 如果没有现有容器或已删除，则创建新容器
             if container is None:
@@ -256,7 +283,7 @@ class RuntimeExecutor:
                     500,
                 )
             
-            browser_url = self._browser_url_from_container(container)
+            browser_url = self._browser_url_from_route_host(req.routeHost)
             logger.info(f"Container browser URL: {browser_url}")
             
             return ContainerStateResponse(
@@ -341,7 +368,9 @@ class RuntimeExecutor:
             runtimeId=runtime_id,
             observedState=observed,  # type: ignore[arg-type]
             internalEndpoint=self._internal_endpoint(runtime_id) if observed != "deleted" else None,
-            browserUrl=self._browser_url_from_container(container) if observed != "deleted" else None,
+            browserUrl=self._browser_url_from_route_host(self._route_host_from_container(container))
+            if observed != "deleted"
+            else None,
             message="ok",
         )
 

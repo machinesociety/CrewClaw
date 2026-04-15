@@ -48,20 +48,9 @@ try {
             $envContent = Get-Content $envFile
             $envContent[0] = "CLAWLOOPS_DOMAIN=clawloops.$localIP.nip.io"
             $envContent[1] = "RUNTIME_MANAGER_DOMAIN=runtime-manager.$localIP.nip.io"
-            $envContent[2] = "RUNTIME_PUBLIC_HOST=$localIP"
+            $envContent[2] = "RUNTIME_ROUTE_HOST_SUFFIX=rt.clawloops.$localIP.nip.io"
+            $envContent[3] = "RUNTIME_BROWSER_SCHEME=http"
             Set-Content $envFile -Value $envContent
-        }
-        
-        # 2. 更新 Traefik 动态配置文件
-        $traefikConfigFile = "infra\traefik\dynamic\middlewares.yml"
-        if (Test-Path $traefikConfigFile) {
-            $traefikContent = Get-Content $traefikConfigFile -Raw
-            # 替换所有 IPv4 地址格式为本地 IP
-            # 匹配 IPv4 地址格式 (xxx.xxx.xxx.xxx)
-            $traefikContent = $traefikContent -replace '(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', $localIP
-            # 替换 $localIP 变量为实际的本地 IP
-            $traefikContent = $traefikContent -replace "\$localIP", $localIP
-            Set-Content $traefikConfigFile -Value $traefikContent
         }
     }
 } catch {

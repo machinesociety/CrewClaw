@@ -1,175 +1,156 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_DIR="${1:-$(pwd)}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEFAULT_REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+REPO_DIR="${1:-$DEFAULT_REPO_DIR}"
 if [[ ! -f "$REPO_DIR/infra/compose/docker-compose.yml" ]]; then
   echo "未找到 CrewClaw 仓库：$REPO_DIR"
-  echo "用法：$0 /path/to/CrewClaw"
+  echo "用法：$0 [repo_dir]"
   exit 1
 fi
 
-if [[ -f /etc/os-release ]]; then
-  . /etc/os-release
-  if [[ "${ID:-}" != "ubuntu" ]]; then
-    echo "当前系统不是 Ubuntu（ID=${ID:-unknown}），脚本仅保证 Ubuntu 可用。"
-  fi
-fi
-
 need_cmd() { command -v "$1" >/dev/null 2>&1; }
+
+require_cmd() {
+  local cmd="$1"
+  local hint="$2"
+  if ! need_cmd "$cmd"; then
+    echo "缺少命令：$cmd"
+    echo "$hint"
+    exit 1
+  fi
+}
 
 sudo_ok() {
   if [[ "$(id -u)" -eq 0 ]]; then
     return 0
   fi
   if ! need_cmd sudo; then
-    echo "缺少 sudo，请以 root 运行或先安装 sudo。"
-    exit 1
+    return 1
   fi
-  sudo -n true >/dev/null 2>&1 || true
-  return 0
+  sudo -n true >/dev/null 2>&1
 }
 
-install_packages() {
-  sudo_ok
-  sudo apt-get update -y
-  sudo apt-get install -y "$@"
-}
-
-install_docker() {
-  if need_cmd docker && docker --version >/dev/null 2>&1; then
+init_docker_cmd() {
+  if docker info >/dev/null 2>&1; then
+    DOCKER_CMD=(docker)
     return 0
   fi
 
-  install_packages ca-certificates curl gnupg lsb-release
-  sudo install -m 0755 -d /etc/apt/keyrings
-  local keyring="/etc/apt/keyrings/docker.gpg"
-  local tmp="/etc/apt/keyrings/docker.gpg.tmp"
-  if [[ ! -f "$keyring" ]] || ! sudo gpg --show-keys "$keyring" >/dev/null 2>&1; then
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o "$tmp"
-    sudo gpg --show-keys "$tmp" >/dev/null 2>&1
-    sudo mv -f "$tmp" "$keyring"
-    sudo chmod a+r "$keyring"
+  if sudo_ok && sudo docker info >/dev/null 2>&1; then
+    DOCKER_CMD=(sudo docker)
+    return 0
   fi
 
-  local arch codename
-  arch="$(dpkg --print-architecture)"
-  codename="$(. /etc/os-release && echo "$VERSION_CODENAME")"
-  echo "deb [arch=${arch} signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ${codename} stable" | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
-
-  sudo apt-get update -y
-  sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-
-  sudo systemctl enable --now docker || true
+  echo "Docker daemon 当前不可用。"
+  echo "请先确认 Docker 已安装并启动，且当前用户可执行 'docker info'，或允许 sudo 执行 Docker。"
+  echo "常见排查："
+  echo "  - 启动服务：sudo systemctl start docker"
+  echo "  - 加入 docker 组后重新登录：sudo usermod -aG docker \$USER"
+  exit 1
 }
 
-ensure_docker_running() {
-  sudo_ok
-  sudo systemctl start docker || true
-  if ! sudo docker info >/dev/null 2>&1; then
-    echo "Docker 未能正常启动，请检查：sudo journalctl -u docker --no-pager -n 200"
+ensure_compose_available() {
+  if ! "${DOCKER_CMD[@]}" compose version >/dev/null 2>&1; then
+    echo "当前 Docker 缺少 'docker compose' 插件。"
+    echo "请按你的发行版安装 Docker Compose plugin 后重试。"
     exit 1
   fi
 }
 
-primary_ip() {
-  ip route get 1 2>/dev/null | awk '{print $(NF-2);exit}'
-}
-
-update_env_file() {
-  local ip="$1"
+ensure_env_file() {
   local env_dir="$REPO_DIR/infra/compose"
   local env_file="$env_dir/.env"
   local example="$env_dir/.env.example"
 
-  if [[ ! -f "$env_file" ]]; then
-    if [[ -f "$example" ]]; then
-      cp "$example" "$env_file"
-    else
-      echo "缺少 $env_file 且找不到 $example"
-      exit 1
-    fi
+  if [[ -f "$env_file" ]]; then
+    return 0
   fi
 
-  if grep -qE '^\s*DASHSCOPE_API_KEY\s*=\s*$' "$env_file"; then
-    echo "检测到 DASHSCOPE_API_KEY 为空：LiteLLM 调用 DashScope 会失败。"
-    echo "请编辑：$env_file 填写 DASHSCOPE_API_KEY，然后重新运行本脚本。"
+  if [[ ! -f "$example" ]]; then
+    echo "缺少 $env_file，且找不到模板文件 $example"
     exit 1
   fi
 
-  local clawloops_domain="clawloops.${ip}.nip.io"
-  local rm_domain="runtime-manager.${ip}.nip.io"
-
-  if grep -qE '^\s*CLAWLOOPS_DOMAIN=' "$env_file"; then
-    sed -i "s|^CLAWLOOPS_DOMAIN=.*|CLAWLOOPS_DOMAIN=${clawloops_domain}|" "$env_file"
-  else
-    echo "CLAWLOOPS_DOMAIN=${clawloops_domain}" >>"$env_file"
-  fi
-
-  if grep -qE '^\s*RUNTIME_MANAGER_DOMAIN=' "$env_file"; then
-    sed -i "s|^RUNTIME_MANAGER_DOMAIN=.*|RUNTIME_MANAGER_DOMAIN=${rm_domain}|" "$env_file"
-  else
-    echo "RUNTIME_MANAGER_DOMAIN=${rm_domain}" >>"$env_file"
-  fi
-
-  if grep -qE '^\s*RUNTIME_PUBLIC_HOST=' "$env_file"; then
-    sed -i "s|^RUNTIME_PUBLIC_HOST=.*|RUNTIME_PUBLIC_HOST=${ip}|" "$env_file"
-  else
-    echo "RUNTIME_PUBLIC_HOST=${ip}" >>"$env_file"
-  fi
+  cp "$example" "$env_file"
+  echo "已创建默认配置：$env_file"
 }
 
-update_traefik_dynamic_routes() {
-  local ip="$1"
-  local f="$REPO_DIR/infra/traefik/dynamic/middlewares.yml"
-  if [[ ! -f "$f" ]]; then
-    return 0
+read_env_value() {
+  local key="$1"
+  local env_file="$REPO_DIR/infra/compose/.env"
+  local line
+
+  line="$(grep -E "^${key}=" "$env_file" | tail -n 1 || true)"
+  if [[ -z "$line" ]]; then
+    return 1
   fi
 
-  local old_ip
-  old_ip="$(grep -oE '([0-9]{1,3}\\.){3}[0-9]{1,3}' "$f" | head -n 1 || true)"
-  if [[ -z "$old_ip" ]]; then
-    return 0
-  fi
-  if [[ "$old_ip" == "$ip" ]]; then
-    return 0
-  fi
+  printf '%s\n' "${line#*=}"
+}
 
-  sed -i "s/${old_ip//./\\.}/${ip//./\\.}/g" "$f"
+validate_env_file() {
+  local env_file="$REPO_DIR/infra/compose/.env"
+  local required_keys=(
+    "CLAWLOOPS_DOMAIN"
+    "RUNTIME_MANAGER_DOMAIN"
+    "RUNTIME_ROUTE_HOST_SUFFIX"
+    "RUNTIME_BROWSER_SCHEME"
+    "DASHSCOPE_API_KEY"
+  )
+
+  local key value
+  for key in "${required_keys[@]}"; do
+    value="$(read_env_value "$key" || true)"
+    if [[ -z "$value" ]]; then
+      echo "配置缺失：$key"
+      echo "请编辑 $env_file 后重试。"
+      exit 1
+    fi
+  done
+}
+
+print_access_summary() {
+  local clawloops_domain runtime_manager_domain runtime_route_suffix runtime_browser_scheme
+
+  clawloops_domain="$(read_env_value "CLAWLOOPS_DOMAIN")"
+  runtime_manager_domain="$(read_env_value "RUNTIME_MANAGER_DOMAIN")"
+  runtime_route_suffix="$(read_env_value "RUNTIME_ROUTE_HOST_SUFFIX")"
+  runtime_browser_scheme="$(read_env_value "RUNTIME_BROWSER_SCHEME")"
+
+  echo "启动完成。"
+  echo "主站：http://${clawloops_domain}"
+  echo "Runtime Manager：http://${runtime_manager_domain}"
+  echo "OpenClaw Runtime 示例：${runtime_browser_scheme}://<runtimeId>.${runtime_route_suffix}/chat?session=main#token=<OpenClaw token>"
+  echo "Traefik Dashboard：http://127.0.0.1:8080"
+
+  if [[ "$clawloops_domain" == *.localhost || "$runtime_manager_domain" == *.localhost ]]; then
+    echo
+    echo "如果浏览器无法解析 .localhost，可在 hosts 中加入："
+    echo "127.0.0.1 ${clawloops_domain} ${runtime_manager_domain}"
+  fi
 }
 
 compose_up() {
   local compose_dir="$REPO_DIR/infra/compose"
-  cd "$compose_dir"
-
-  if docker compose version >/dev/null 2>&1; then
-    :
-  else
-    echo "docker compose 不可用（缺少 compose plugin），请确认 docker-compose-plugin 已安装。"
-    exit 1
-  fi
-
-  sudo_ok
-  sudo docker compose up -d --build
+  (
+    cd "$compose_dir"
+    "${DOCKER_CMD[@]}" compose up -d --build
+  )
 }
 
 main() {
-  install_docker
-  ensure_docker_running
+  require_cmd "grep" "请先安装基础文本工具（通常系统默认自带 grep）。"
+  require_cmd "docker" "请先安装 Docker Engine。脚本不再自动安装 Docker，以避免发行版耦合。"
 
-  local ip
-  ip="$(primary_ip)"
-  if [[ -z "$ip" ]]; then
-    echo "无法自动识别服务器 IP，请手动设置 RUNTIME_PUBLIC_HOST 并更新路由域名。"
-    exit 1
-  fi
-
-  update_env_file "$ip"
-  update_traefik_dynamic_routes "$ip"
+  init_docker_cmd
+  ensure_compose_available
+  ensure_env_file
+  validate_env_file
   compose_up
-
-  echo "启动完成。"
-  echo "主站（nip.io）：http://clawloops.${ip}.nip.io"
-  echo "Traefik Dashboard：http://${ip}:8080"
+  print_access_summary
 }
 
 main "$@"

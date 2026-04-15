@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+import re
 from typing import Optional
 
 from app.domain.runtime import RuntimeAction, RuntimeTask, TaskStatus
@@ -48,8 +49,10 @@ class RuntimeService:
         self._task_repo.save(task)
         return task
 
-    def _route_host_for_user(self, user_id: str) -> str:
-        return f"u-{user_id}.{self._route_host_suffix}"
+    def _route_host_for_runtime(self, runtime_id: str) -> str:
+        safe_runtime_id = re.sub(r"[^a-z0-9-]+", "-", runtime_id.lower()).strip("-")
+        safe_runtime_id = safe_runtime_id or "runtime"
+        return f"{safe_runtime_id}.{self._route_host_suffix}"
 
     def ensure_running(self, user_id: str) -> RuntimeTask:
         """
@@ -70,7 +73,7 @@ class RuntimeService:
             model_config = self._model_config_service.get_user_model_config(user_id)
             openclaw_json, config_version = self._config_renderer.render(user_id, binding, model_config)
 
-            route_host = self._route_host_for_user(user_id)
+            route_host = self._route_host_for_runtime(binding.runtimeId)
             payload = {
                 "userId": user_id,
                 "runtimeId": binding.runtimeId,
@@ -351,4 +354,3 @@ class RuntimeManagerPortAdapter(RuntimeManagerPort):
 
     def write_file(self, runtime_id: str, path: str, content: str | bytes) -> None:
         self._client.write_file(runtime_id=runtime_id, path=path, content=content)
-
