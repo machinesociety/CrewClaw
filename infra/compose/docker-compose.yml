@@ -33,6 +33,7 @@ services:
     restart: unless-stopped
     environment:
       - PYTHONUNBUFFERED=1
+      - CLAWLOOPS_DATABASE_URL=${CLAWLOOPS_DATABASE_URL:-sqlite:////var/lib/clawloops-api/clawloops.db}
       - NO_PROXY=localhost,127.0.0.1,::1,clawloops-web,clawloops-api,runtime-manager,litellm,ollama,traefik
       - no_proxy=localhost,127.0.0.1,::1,clawloops-web,clawloops-api,runtime-manager,litellm,ollama,traefik
       - CLAWLOOPS_ROUTE_HOST_SUFFIX=${CLAWLOOPS_DOMAIN}
@@ -42,6 +43,8 @@ services:
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+    volumes:
+      - clawloops_api_data:/var/lib/clawloops-api
     labels:
       - traefik.enable=true
       - traefik.http.routers.clawloops_api.rule=Host(`${CLAWLOOPS_DOMAIN}`) && PathPrefix(`/api`)
@@ -102,7 +105,7 @@ services:
   prewarm-openclaw:
     profiles:
       - prewarm
-    image: "ghcr.io/openclaw/openclaw@sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02"
+    image: "ghcr.io/openclaw/openclaw@sha256:0b2170d5ec3a487a6313ed0556d377c5c5c80a0f806043daa2e685a4bedd45e3"
 
   prewarm-litellm:
     profiles:
@@ -121,10 +124,25 @@ services:
     networks:
       - clawloops_shared
 
+  litellm-db:
+    image: postgres:16-alpine
+    container_name: crewclaw-litellm-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=litellm
+      - POSTGRES_USER=litellm
+      - POSTGRES_PASSWORD=litellm
+    volumes:
+      - litellm_db_data:/var/lib/postgresql/data
+    networks:
+      - clawloops_shared
+
   litellm:
     image: "ghcr.io/berriai/litellm:v1.81.3-stable"
     container_name: crewclaw-litellm
     restart: unless-stopped
+    depends_on:
+      - litellm-db
     entrypoint:
       - /bin/sh
       - -lc
@@ -134,6 +152,8 @@ services:
         exec litellm --config /app/config.yaml --host 0.0.0.0 --port 4000
     environment:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-local-master}
+      - DATABASE_URL=${LITELLM_DATABASE_URL:-postgresql://litellm:litellm@litellm-db:5432/litellm}
+      - STORE_MODEL_IN_DB=True
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
@@ -150,4 +170,6 @@ networks:
     driver: bridge
 
 volumes:
+  clawloops_api_data:
+  litellm_db_data:
   ollama_data:

@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     runtime_public_host: str = "localhost"
     runtime_openclaw_network: str = "clawloops_shared"
     runtime_openclaw_image_ref: str = (
-        "ghcr.io/openclaw/openclaw@sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02"
+        "ghcr.io/openclaw/openclaw@sha256:0b2170d5ec3a487a6313ed0556d377c5c5c80a0f806043daa2e685a4bedd45e3"
     )
     runtime_openclaw_command: str = "node dist/index.js gateway --bind lan --port 18789"
     runtime_startup_grace_seconds: int = 30
