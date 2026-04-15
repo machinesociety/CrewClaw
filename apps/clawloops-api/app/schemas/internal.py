@@ -55,7 +55,7 @@ class EnsureContainerRequest(BaseModel):
     userId: str
     runtimeId: str
     volumeId: str
-    routeHost: str
+    routePathPrefix: str
     retentionPolicy: str
     compat: CompatConfig
     renderedConfig: RenderedConfig
@@ -78,4 +78,3 @@ class ContainerStateResponse(BaseModel):
     observedState: str
     internalEndpoint: str | None = None
     message: str | None = None
-

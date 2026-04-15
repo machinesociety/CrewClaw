@@ -51,8 +51,8 @@ def detect_drift(container, req: EnsureContainerRequest, settings: Settings) -> 
         drifts.append("network")
 
     labels = attrs.get("Config", {}).get("Labels", {}) or {}
-    if labels.get("clawloops.routeHost") != req.routeHost:
-        drifts.append("routeHost")
+    if labels.get("clawloops.routePathPrefix") != req.routePathPrefix:
+        drifts.append("routePathPrefix")
     if labels.get("traefik.enable") != "true":
         drifts.append("traefik")
     if labels.get("clawloops.configVersion") != req.renderedConfig.configVersion:

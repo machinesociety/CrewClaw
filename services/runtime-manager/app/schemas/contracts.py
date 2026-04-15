@@ -23,13 +23,15 @@ class EnsureContainerRequest(BaseModel):
     userId: str
     runtimeId: str
     volumeId: str
-    routeHost: str
+    routePathPrefix: str
     retentionPolicy: RetentionPolicy
     compat: CompatConfig
     renderedConfig: RenderedConfig
 
     @model_validator(mode="after")
     def _validate_required_rendered_values(self) -> "EnsureContainerRequest":
+        if not self.routePathPrefix.startswith("/runtime/"):
+            raise ValueError("routePathPrefix must start with /runtime/")
         gateway = self.renderedConfig.openclawJson.get("gateway", {})
         if gateway.get("bind") != "lan" or gateway.get("port") != 18789:
             raise ValueError("renderedConfig.gateway must be bind=lan and port=18789")

@@ -29,7 +29,6 @@ services:
     restart: unless-stopped
     environment:
       - PYTHONUNBUFFERED=1
-      - CLAWLOOPS_ROUTE_HOST_SUFFIX=${RUNTIME_ROUTE_HOST_SUFFIX}
       - CLAWLOOPS_LITELLM_API_KEY=${LITELLM_MASTER_KEY:-sk-local-master}
       - CLAWLOOPS_MODEL_GATEWAY_BASE_URL=${CLAWLOOPS_MODEL_GATEWAY_BASE_URL:-http://litellm:4000}
       - CLAWLOOPS_MODEL_GATEWAY_DEFAULT_MODELS=${CLAWLOOPS_MODEL_GATEWAY_DEFAULT_MODELS:-qwen-max-proxy}
@@ -37,6 +36,7 @@ services:
       - traefik.enable=true
       - traefik.http.routers.clawloops_api.rule=Host(`${CLAWLOOPS_DOMAIN}`) && PathPrefix(`/api`)
       - traefik.http.routers.clawloops_api.entrypoints=web
+      - traefik.http.routers.clawloops_api.priority=100
       - traefik.http.services.clawloops_api.loadbalancer.server.port=8000
     networks:
       - clawloops_shared
@@ -57,6 +57,7 @@ services:
       - traefik.enable=true
       - traefik.http.routers.clawloops_web.rule=Host(`${CLAWLOOPS_DOMAIN}`)
       - traefik.http.routers.clawloops_web.entrypoints=web
+      - traefik.http.routers.clawloops_web.priority=1
       - traefik.http.services.clawloops_web.loadbalancer.server.port=3000
     networks:
       - clawloops_shared
@@ -74,14 +75,18 @@ services:
       - RUNTIME_MANAGER_HOST=0.0.0.0
       - RUNTIME_MANAGER_PORT=18080
       - RUNTIME_BROWSER_SCHEME=${RUNTIME_BROWSER_SCHEME:-https}
+      - RUNTIME_PUBLIC_BASE_URL=${RUNTIME_PUBLIC_BASE_URL:-http://${CLAWLOOPS_DOMAIN}}
       - RUNTIME_OPENCLAW_NETWORK=clawloops_shared
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /var/lib/clawloops:/var/lib/clawloops
     labels:
       - traefik.enable=true
-      - traefik.http.routers.runtime_manager.rule=Host(`${RUNTIME_MANAGER_DOMAIN}`)
+      - traefik.http.routers.runtime_manager.rule=Host(`${CLAWLOOPS_DOMAIN}`) && PathPrefix(`/runtime-manager`)
       - traefik.http.routers.runtime_manager.entrypoints=web
+      - traefik.http.routers.runtime_manager.priority=110
+      - traefik.http.routers.runtime_manager.middlewares=runtime_manager_strip
+      - traefik.http.middlewares.runtime_manager_strip.stripprefix.prefixes=/runtime-manager
       - traefik.http.services.runtime_manager.loadbalancer.server.port=18080
     networks:
       - clawloops_shared

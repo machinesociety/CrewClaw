@@ -17,13 +17,15 @@ powershell -ExecutionPolicy Bypass -File "C:\path\to\CrewClaw\oneclick\start-cre
 ## 脚本做了什么
 
 - 检查 Docker Desktop 是否已安装并运行
-- 检查 WSL 服务是否已启用
-- 自动识别 Windows 主机的 IP 地址，并更新 `infra/compose/.env`：
-  - `CLAWLOOPS_DOMAIN=clawloops.<IP>.nip.io`
-  - `RUNTIME_MANAGER_DOMAIN=runtime-manager.<IP>.nip.io`
-  - `RUNTIME_ROUTE_HOST_SUFFIX=rt.clawloops.<IP>.nip.io`
-  - `RUNTIME_BROWSER_SCHEME=http`
+- 检查 `docker compose` 是否可用
+- 若 `infra/compose/.env` 不存在，则从 `.env.example` 创建
+- 校验当前方案必需的配置项：
+  - `CLAWLOOPS_DOMAIN`
+  - `RUNTIME_PUBLIC_BASE_URL`
+  - `RUNTIME_BROWSER_SCHEME`
+  - `DASHSCOPE_API_KEY`
 - 执行 `docker compose up -d --build` 拉起服务
+- 输出与当前 `.env` 一致的访问地址
 
 ## 重要说明
 
@@ -31,12 +33,13 @@ powershell -ExecutionPolicy Bypass -File "C:\path\to\CrewClaw\oneclick\start-cre
    - 从 [Docker 官网](https://www.docker.com/products/docker-desktop/) 下载并安装 Docker Desktop for Windows
    - 安装完成后，确保 Docker Desktop 已启动并运行
 
-2. **WSL 服务要求**：
-   - Windows 电脑的 BIOS 需要支持硬盘虚拟化（Intel VT-x 或 AMD-V）
-   - 需要启用 Windows Subsystem for Linux (WSL)
-   - 可以通过 PowerShell 命令启用 WSL：
-     ```powershell
-     wsl --install
+2. **配置策略**：
+   - 脚本不会改写你的域名配置，也不会使用 `nip.io`
+   - 它会直接沿用 `infra/compose/.env` 中的配置
+   - 默认示例配置使用：
+     ```
+     CLAWLOOPS_DOMAIN=clawloops.localhost
+     RUNTIME_PUBLIC_BASE_URL=http://clawloops.localhost
      ```
 
 3. **API Key 配置**：
@@ -47,8 +50,9 @@ powershell -ExecutionPolicy Bypass -File "C:\path\to\CrewClaw\oneclick\start-cre
      ```
 
 4. **访问方式**：
-   - 服务启动后，可以通过 `http://clawloops.<IP>.nip.io` 访问 CrewClaw
-   - OpenClaw 运行时通过子域名暴露（例如 `http://rt-u-123.rt.clawloops.<IP>.nip.io`）
+   - 服务启动后，可以通过 `http://<CLAWLOOPS_DOMAIN>` 访问 CrewClaw
+   - Runtime Manager 通过 `http://<CLAWLOOPS_DOMAIN>/runtime-manager` 访问
+   - OpenClaw 运行时通过路径暴露，例如 `http://<CLAWLOOPS_DOMAIN>/runtime/<runtimeId>/chat?session=main#token=<OpenClaw token>`
 
 5. **防火墙设置**：
    - 若需要从网络其他设备访问，请确保 Windows 防火墙允许 Docker 相关端口的访问

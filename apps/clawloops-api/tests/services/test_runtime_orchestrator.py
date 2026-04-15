@@ -107,7 +107,7 @@ def _make_service() -> tuple[RuntimeService, FakeBindingPort, FakeRuntimeManager
         runtime_manager=runtime_manager,
         task_repo=task_repo,
         config_renderer=renderer,
-        route_host_suffix="clawloops.test",
+        runtime_route_prefix="/runtime",
     )
     return svc, binding_port, runtime_manager, task_repo
 
@@ -161,7 +161,7 @@ def test_ensure_running_creates_binding_and_calls_runtime_manager(tmp_path):
     assert len(runtime_manager.ensure_payloads) == 1
     payload = runtime_manager.ensure_payloads[0]
     assert payload["runtimeId"] == binding_port.binding.runtimeId
-    assert payload["routeHost"] == "rt-001.clawloops.test"
+    assert payload["routePathPrefix"] == "/runtime/rt-001"
     
     # assert "configMount" in payload
     # assert "configFilePath" in payload["configMount"]

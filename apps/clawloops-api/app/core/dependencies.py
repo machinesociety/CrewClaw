@@ -219,6 +219,5 @@ def get_runtime_service(
         runtime_manager=runtime_manager_port,
         task_repo=task_repo,
         config_renderer=renderer,
-        route_host_suffix=settings.route_host_suffix,
+        runtime_route_prefix=settings.runtime_route_prefix,
     )
-

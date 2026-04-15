@@ -26,7 +26,7 @@ class AppSettings(BaseSettings):
     # 预留后续接入的外部服务配置字段
     database_url: str | None = None
     runtime_manager_base_url: str | None = None
-    route_host_suffix: str = "clawloops.localhost"
+    runtime_route_prefix: str = "/runtime"
     model_gateway_base_url: str | None = None
     model_gateway_default_models: str = "qwen-max-proxy"
     litellm_api_key: str = "sk-local-master"
@@ -45,4 +45,3 @@ def get_settings() -> AppSettings:
     """提供带缓存的全局配置实例，供依赖注入使用。"""
 
     return AppSettings()
-

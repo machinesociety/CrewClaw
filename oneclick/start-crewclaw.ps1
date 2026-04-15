@@ -1,110 +1,96 @@
-try {
-    wsl --update --web-download
-} catch {
+$repoDir = if ($args.Count -gt 0) { $args[0] } else { (Resolve-Path (Join-Path $PSScriptRoot "..")).Path }
+$composeDir = Join-Path $repoDir "infra\compose"
+$envFile = Join-Path $composeDir ".env"
+$envExample = Join-Path $composeDir ".env.example"
+$composeFile = Join-Path $composeDir "docker-compose.yml"
+
+if (-not (Test-Path $composeFile)) {
+    Write-Error "未找到 CrewClaw 仓库：$repoDir"
+    exit 1
+}
+
+function Get-EnvValue {
+    param (
+        [string]$Key
+    )
+
+    if (-not (Test-Path $envFile)) {
+        return $null
+    }
+
+    $line = Get-Content $envFile | Where-Object { $_ -match "^$Key=" } | Select-Object -Last 1
+    if (-not $line) {
+        return $null
+    }
+
+    return $line.Split("=", 2)[1]
 }
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+    Write-Error "缺少命令：docker。请先安装并启动 Docker Desktop。"
     exit 1
 }
 
-# ----------------------------
-# 3. 下载工作台镜像
-# ----------------------------
 try {
-    docker pull ghcr.io/openclaw/openclaw@sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02
+    docker info | Out-Null
 } catch {
-}
-
-
-try {
-    # 获取以太网适配器的 IPv4 地址
-    # 优先选择 "以太网" 适配器的 IP 地址
-    $localIP = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object {
-        $_.InterfaceAlias -eq "以太网" -and 
-        $_.IPAddress -notlike "169.254.*"
-    }).IPAddress | Select-Object -First 1
-    
-    # 如果没有找到以太网适配器的 IP，再尝试获取 192.168 网段的 IP
-    if (-not $localIP) {
-        $localIP = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object {
-            $_.InterfaceAlias -ne "Loopback Pseudo-Interface 1" -and 
-            $_.IPAddress -notlike "169.254.*" -and
-            $_.IPAddress -like "192.168.*"
-        }).IPAddress | Select-Object -First 1
-    }
-    
-    # 如果仍然没有找到，再尝试获取其他网段的 IP
-    if (-not $localIP) {
-        $localIP = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object {
-            $_.InterfaceAlias -ne "Loopback Pseudo-Interface 1" -and 
-            $_.IPAddress -notlike "169.254.*"
-        }).IPAddress | Select-Object -First 1
-    }
-    
-    if ($localIP) {
-        # 1. 更新 .env 文件
-        $envFile = "infra\compose\.env"
-        if (Test-Path $envFile) {
-            $envContent = Get-Content $envFile
-            $envContent[0] = "CLAWLOOPS_DOMAIN=clawloops.$localIP.nip.io"
-            $envContent[1] = "RUNTIME_MANAGER_DOMAIN=runtime-manager.$localIP.nip.io"
-            $envContent[2] = "RUNTIME_ROUTE_HOST_SUFFIX=rt.clawloops.$localIP.nip.io"
-            $envContent[3] = "RUNTIME_BROWSER_SCHEME=http"
-            Set-Content $envFile -Value $envContent
-        }
-    }
-} catch {
-}
-
-# ----------------------------
-# 5. 启动服务
-# ----------------------------
-try {
-    # 切换到 compose 目录执行命令
-    $composeDir = "infra\compose"
-    Set-Location $composeDir
-    
-    # 执行启动命令
-    docker compose up -d
-    
-    # 切换回项目根目录
-    Set-Location ..\..
-} catch {
-    # 确保切换回项目根目录
-    Set-Location ..\.. -ErrorAction SilentlyContinue
+    Write-Error "Docker daemon 当前不可用，请先启动 Docker Desktop。"
     exit 1
 }
 
-# ----------------------------
-# 6. 显示服务状态
-# ----------------------------
 try {
-    # 切换到 compose 目录执行命令
-    $composeDir = "infra\compose"
-    Set-Location $composeDir
-    
-    # 执行状态检查命令
+    docker compose version | Out-Null
+} catch {
+    Write-Error "当前 Docker 缺少 'docker compose'。请确认 Docker Desktop 已正确安装 Compose。"
+    exit 1
+}
+
+if (-not (Test-Path $envFile)) {
+    if (-not (Test-Path $envExample)) {
+        Write-Error "缺少 $envFile，且找不到模板文件 $envExample"
+        exit 1
+    }
+
+    Copy-Item $envExample $envFile
+    Write-Host "已创建默认配置：$envFile"
+}
+
+$requiredKeys = @(
+    "CLAWLOOPS_DOMAIN",
+    "RUNTIME_PUBLIC_BASE_URL",
+    "RUNTIME_BROWSER_SCHEME",
+    "DASHSCOPE_API_KEY"
+)
+
+foreach ($key in $requiredKeys) {
+    $value = Get-EnvValue -Key $key
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        Write-Error "配置缺失：$key。请编辑 $envFile 后重试。"
+        exit 1
+    }
+}
+
+Push-Location $composeDir
+try {
+    docker compose up -d --build
     docker compose ps
-    
-    # 切换回项目根目录
-    Set-Location ..\..
 } catch {
-    # 确保切换回项目根目录
-    Set-Location ..\.. -ErrorAction SilentlyContinue
+    Pop-Location
+    throw
 }
+Pop-Location
 
-# ----------------------------
-# 7. 自动打开浏览器
-# ----------------------------
+$clawloopsDomain = Get-EnvValue -Key "CLAWLOOPS_DOMAIN"
+$runtimePublicBaseUrl = Get-EnvValue -Key "RUNTIME_PUBLIC_BASE_URL"
+
+Write-Host ""
+Write-Host "启动完成。"
+Write-Host "主站：http://$clawloopsDomain"
+Write-Host "Runtime Manager：http://$clawloopsDomain/runtime-manager"
+Write-Host "OpenClaw Runtime 示例：$runtimePublicBaseUrl/runtime/<runtimeId>/chat?session=main#token=<OpenClaw token>"
+Write-Host "Traefik Dashboard：http://127.0.0.1:8080"
+
 try {
-    # 读取更新后的 .env 文件，获取实际的访问地址
-    $envFile = "infra\compose\.env"
-    if (Test-Path $envFile) {
-        $envContent = Get-Content $envFile
-        $clawloopsDomain = $envContent[0].Split('=')[1]
-        $accessUrl = "http://$clawloopsDomain"
-        
-        Start-Process $accessUrl
-    }
+    Start-Process "http://$clawloopsDomain" | Out-Null
 } catch {
 }

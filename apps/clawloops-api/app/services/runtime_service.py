@@ -28,14 +28,14 @@ class RuntimeService:
         runtime_manager: RuntimeManagerPort,
         task_repo: RuntimeTaskRepository,
         config_renderer: RuntimeConfigRenderer,
-        route_host_suffix: str = "clawloops.example.com",
+        runtime_route_prefix: str = "/runtime",
     ) -> None:
         self._binding_service = binding_service
         self._model_config_service = model_config_service
         self._runtime_manager = runtime_manager
         self._task_repo = task_repo
         self._config_renderer = config_renderer
-        self._route_host_suffix = route_host_suffix
+        self._runtime_route_prefix = runtime_route_prefix if runtime_route_prefix.startswith("/") else f"/{runtime_route_prefix}"
 
     def _new_task(self, user_id: str, runtime_id: str, action: RuntimeAction) -> RuntimeTask:
         task = RuntimeTask(
@@ -49,10 +49,10 @@ class RuntimeService:
         self._task_repo.save(task)
         return task
 
-    def _route_host_for_runtime(self, runtime_id: str) -> str:
+    def _route_path_prefix_for_runtime(self, runtime_id: str) -> str:
         safe_runtime_id = re.sub(r"[^a-z0-9-]+", "-", runtime_id.lower()).strip("-")
         safe_runtime_id = safe_runtime_id or "runtime"
-        return f"{safe_runtime_id}.{self._route_host_suffix}"
+        return f"{self._runtime_route_prefix.rstrip('/')}/{safe_runtime_id}"
 
     def ensure_running(self, user_id: str) -> RuntimeTask:
         """
@@ -73,12 +73,12 @@ class RuntimeService:
             model_config = self._model_config_service.get_user_model_config(user_id)
             openclaw_json, config_version = self._config_renderer.render(user_id, binding, model_config)
 
-            route_host = self._route_host_for_runtime(binding.runtimeId)
+            route_path_prefix = self._route_path_prefix_for_runtime(binding.runtimeId)
             payload = {
                 "userId": user_id,
                 "runtimeId": binding.runtimeId,
                 "volumeId": binding.volumeId,
-                "routeHost": route_host,
+                "routePathPrefix": route_path_prefix,
                 "retentionPolicy": binding.retentionPolicy.value,
                 "compat": {
                     "openclawConfigDir": f"/var/lib/clawloops/{user_id}/openclaw-config",
