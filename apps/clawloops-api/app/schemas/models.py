@@ -18,6 +18,8 @@ class ModelListResponse(BaseModel):
 class AdminModelItem(ModelItem):
     userVisible: bool = True
     defaultProviderCredentialId: str | None = None
+    runtimeRefreshTriggered: bool = False
+    runtimeBrowserUrl: str | None = None
 
 
 class AdminModelListResponse(BaseModel):
@@ -30,4 +32,3 @@ class UpdateAdminModelRequest(BaseModel):
     pricingType: str | None = None
     defaultRoute: str | None = None
     defaultProviderCredentialId: str | None = None
-

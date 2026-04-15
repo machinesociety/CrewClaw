@@ -6,7 +6,7 @@ from app.core.dependencies import (
     get_runtime_binding_repository,
     get_user_service,
 )
-from app.domain.models import UsageSummary
+from app.domain.models import Model, ModelSource, PricingType, UsageSummary
 from app.domain.users import (
     DesiredState,
     ObservedState,
@@ -256,5 +256,93 @@ def test_admin_can_manage_models_provider_credentials_and_usage(client, issue_se
             f"/api/v1/admin/provider-credentials/{credential['credentialId']}",
         )
         assert delete_resp.status_code == status.HTTP_204_NO_CONTENT
+    finally:
+        client.app.dependency_overrides.clear()
+
+
+def test_admin_can_update_model_with_slash_in_model_id(client, issue_session_cookie):
+    reset_inmemory_model_repositories()
+    repo, binding_repo, service = _setup_admin_services()
+    model_repo = get_inmemory_model_repository()
+    model_repo.save(
+        Model(
+            model_id="z-ai/glm-4.5-air:free",
+            name="Z.ai: GLM 4.5 Air (free)",
+            provider="openrouter",
+            source=ModelSource.SHARED,
+            pricing_type=PricingType.FREE,
+            enabled=False,
+            user_visible=False,
+            default_route="openrouter/z-ai/glm-4.5-air:free",
+            default_provider_credential_id=None,
+        )
+    )
+
+    client.app.dependency_overrides[get_sqlalchemy_user_repository] = lambda: repo
+    client.app.dependency_overrides[get_runtime_binding_repository] = lambda: binding_repo
+    client.app.dependency_overrides[get_user_service] = lambda: service
+
+    try:
+        issue_session_cookie(client, user_id="u_admin")
+        update_resp = client.put(
+            "/api/v1/admin/models/z-ai%2Fglm-4.5-air%3Afree",
+            json={
+                "enabled": True,
+                "userVisible": True,
+                "pricingType": "free",
+            },
+        )
+        assert update_resp.status_code == status.HTTP_200_OK
+        updated = update_resp.json()
+        assert updated["modelId"] == "z-ai/glm-4.5-air:free"
+        assert updated["enabled"] is True
+        assert updated["userVisible"] is True
+    finally:
+        client.app.dependency_overrides.clear()
+
+
+def test_admin_model_update_triggers_runtime_refresh_for_current_admin_with_binding(
+    client, issue_session_cookie
+):
+    reset_inmemory_model_repositories()
+    repo, binding_repo, service = _setup_admin_services()
+    binding_repo.save(
+        UserRuntimeBinding(
+            user_id="u_admin",
+            runtime_id="rt_u_admin",
+            volume_id="vol_u_admin",
+            image_ref="clawloops-runtime-wrapper:openclaw-1.0.0",
+            desired_state=DesiredState.RUNNING,
+            observed_state=ObservedState.RUNNING,
+            retention_policy=RetentionPolicy.PRESERVE_WORKSPACE,
+            browser_url="https://u-admin.clawloops.example.com",
+            internal_endpoint="http://clawloops-u-admin:3000",
+            last_error=None,
+        )
+    )
+
+    class _DummyRuntimeService:
+        def __init__(self) -> None:
+            self.ensure_running_calls: list[str] = []
+
+        def ensure_running(self, user_id: str):
+            self.ensure_running_calls.append(user_id)
+            return None
+
+    runtime_service = _DummyRuntimeService()
+
+    client.app.dependency_overrides[get_sqlalchemy_user_repository] = lambda: repo
+    client.app.dependency_overrides[get_runtime_binding_repository] = lambda: binding_repo
+    client.app.dependency_overrides[get_user_service] = lambda: service
+    client.app.dependency_overrides[get_runtime_service] = lambda: runtime_service
+
+    try:
+        issue_session_cookie(client, user_id="u_admin")
+        update_resp = client.put(
+            "/api/v1/admin/models/gpt-4-mini-paid",
+            json={"enabled": True},
+        )
+        assert update_resp.status_code == status.HTTP_200_OK
+        assert runtime_service.ensure_running_calls == ["u_admin"]
     finally:
         client.app.dependency_overrides.clear()

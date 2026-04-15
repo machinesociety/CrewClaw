@@ -239,6 +239,8 @@ export interface Model {
   userVisible?: boolean;
   isDefault?: boolean;
   policy?: Record<string, unknown>;
+  runtimeRefreshTriggered?: boolean;
+  runtimeBrowserUrl?: string | null;
 }
 
 // Admin - Users

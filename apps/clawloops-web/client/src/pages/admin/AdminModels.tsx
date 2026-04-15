@@ -67,6 +67,15 @@ function AdminModelsContent() {
     loadModels();
   }, [loadModels]);
 
+  const showRuntimeRefreshHint = useCallback((updated: Partial<Model>) => {
+    if (!updated.runtimeRefreshTriggered) return;
+    toast.success('模型配置已更新，OpenClaw 已刷新', {
+      description: updated.runtimeBrowserUrl
+        ? `当前工作区模型目录已重载。如聊天页已打开，请刷新一次页面：${updated.runtimeBrowserUrl}`
+        : '当前工作区模型目录已重载。如聊天页已打开，请刷新一次页面。',
+    });
+  }, []);
+
   const handleUpdate = async (modelId: string, patch: Partial<Model>) => {
     setUpdatingId(modelId);
     try {
@@ -74,7 +83,11 @@ function AdminModelsContent() {
       setModels((prev) =>
         prev.map((m) => (m.modelId === modelId ? { ...m, ...updated } : m))
       );
-      toast.success('模型配置已更新');
+      if (updated.runtimeRefreshTriggered) {
+        showRuntimeRefreshHint(updated);
+      } else {
+        toast.success('模型配置已更新');
+      }
     } catch (e) {
       toast.error(isAppError(e) ? e.message : '更新失败');
     } finally {
@@ -214,7 +227,12 @@ function AdminModelsContent() {
                         checked={model.enabled ?? false}
                         disabled={updatingId === model.modelId}
                         onCheckedChange={(checked) =>
-                          handleUpdate(model.modelId, { enabled: checked })
+                          handleUpdate(
+                            model.modelId,
+                            checked
+                              ? { enabled: true, userVisible: true, visible: true }
+                              : { enabled: false },
+                          )
                         }
                       />
                     </TableCell>

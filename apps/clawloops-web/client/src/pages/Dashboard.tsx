@@ -122,6 +122,11 @@ function deriveRuntimeUIState(status: RuntimeStatusProjection | null): RuntimeUI
   return 'runtimeUnknown';
 }
 
+function isRuntimeStartingOrRunning(status: RuntimeStatusProjection | null): boolean {
+  if (!status) return false;
+  return status.desiredState === 'running' || status.observedState === 'creating' || status.observedState === 'running';
+}
+
 // ============================================================
 // Runtime state label/icon
 // ============================================================
@@ -576,9 +581,20 @@ function DashboardContent() {
   const handleToggleModelEnabled = useCallback(async (modelId: string, enabled: boolean) => {
     setModelsUpdatingId(modelId);
     try {
-      const updated = await adminApi.models.update(modelId, { enabled });
+      const updated = await adminApi.models.update(
+        modelId,
+        enabled ? { enabled: true, userVisible: true } : { enabled: false },
+      );
       setModels((prev) => prev.map((m) => (m.modelId === modelId ? { ...m, ...updated } : m)));
-      toast.success(enabled ? '模型已上架' : '模型已下架');
+      if (updated.runtimeRefreshTriggered) {
+        toast.success(enabled ? '模型已上架，OpenClaw 已刷新' : '模型已下架，OpenClaw 已刷新', {
+          description: updated.runtimeBrowserUrl
+            ? `当前工作区模型目录已重载。如聊天页已打开，请刷新一次页面：${updated.runtimeBrowserUrl}`
+            : '当前工作区模型目录已重载。如聊天页已打开，请刷新一次页面。',
+        });
+      } else {
+        toast.success(enabled ? '模型已上架' : '模型已下架');
+      }
     } catch (e) {
       toast.error(isAppError(e) ? e.message : '更新失败');
     } finally {
@@ -592,6 +608,32 @@ function DashboardContent() {
     setModelsLoading(true);
     Promise.all([loadRuntimeStatus(), loadModels()]);
   }, [loadRuntimeStatus, loadModels]);
+
+  useEffect(() => {
+    if (!runtimeStatus) return;
+
+    // If runtime is already ready/running, clear any stale "start" in-progress UI state
+    // so buttons reflect the actual backend state.
+    if (
+      actionInProgress === 'start' &&
+      runtimeStatus.observedState === 'running' &&
+      runtimeStatus.ready
+    ) {
+      setActionInProgress(null);
+      setActiveTask(null);
+      pollingRef.current = false;
+    }
+
+    // If runtime is fully stopped/deleted, clear stale "stop" state too.
+    if (
+      actionInProgress === 'stop' &&
+      (runtimeStatus.observedState === 'stopped' || runtimeStatus.observedState === 'deleted')
+    ) {
+      setActionInProgress(null);
+      setActiveTask(null);
+      pollingRef.current = false;
+    }
+  }, [runtimeStatus, actionInProgress]);
 
   // ============================================================
   // Task polling
@@ -630,6 +672,20 @@ function DashboardContent() {
       toast.success('启动任务已提交');
       startPolling(res.taskId, 'start');
     } catch (e) {
+      try {
+        const latestStatus = await runtimeApi.status();
+        setRuntimeStatus(latestStatus);
+        if (isRuntimeStartingOrRunning(latestStatus)) {
+          toast.success('启动任务已提交', {
+            description: '运行时已进入启动流程，请稍候刷新状态。',
+          });
+          setActionInProgress('start');
+          return;
+        }
+      } catch {
+        // Ignore follow-up status check errors and fall back to the original error toast.
+      }
+
       if (isAppError(e)) {
         toast.error(`启动失败: ${e.message}`, { description: e.code });
       } else {
