@@ -1,15 +1,11 @@
-Open_Source_and_Growth_Strategy.md
-MVP_Contract.md
-API_Spec.md
-Architecture_Design.md
-AUTHENTIK_Implementation_Guide.md
+
 *.db
 .venv
 .idea
 
 .pnpm-store/
 
-docs/
+
 __pycache__/
 .cursor/
 docker_test/

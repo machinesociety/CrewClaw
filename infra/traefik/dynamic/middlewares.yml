@@ -1,5 +1,4 @@
-http: {}
-
+# Reserved for future dynamic Traefik middlewares.
 
 
 
