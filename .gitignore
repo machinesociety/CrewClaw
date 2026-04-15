@@ -5,7 +5,9 @@
 
 .pnpm-store/
 
-
+.codex
+AGENTS.md
 __pycache__/
 .cursor/
 docker_test/
+docs/
