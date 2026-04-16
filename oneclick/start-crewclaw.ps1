@@ -25,6 +25,62 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
+function Set-OrAppendEnvValue {
+    param(
+        [string]$FilePath,
+        [string]$Key,
+        [string]$Value
+    )
+
+    $prefix = "$Key="
+    $lines = @()
+    if (Test-Path $FilePath) {
+        $lines = Get-Content $FilePath
+    }
+
+    $updated = $false
+    $result = foreach ($line in $lines) {
+        if ($line -like "$prefix*") {
+            $updated = $true
+            "$prefix$Value"
+        } else {
+            $line
+        }
+    }
+
+    if (-not $updated) {
+        $result += "$prefix$Value"
+    }
+
+    Set-Content $FilePath -Value $result
+}
+
+function Sync-UserFilesPathEnv {
+    $scriptDir = Split-Path -Parent $PSCommandPath
+    $projectRoot = (Resolve-Path (Join-Path $scriptDir "..")).Path
+    $userFilesPath = Join-Path $projectRoot "user-files"
+
+    if (-not (Test-Path $userFilesPath)) {
+        New-Item -ItemType Directory -Path $userFilesPath -Force | Out-Null
+    }
+
+    $windowsPath = (Resolve-Path $userFilesPath).Path
+    $composeUserFilesPath = $windowsPath -replace '\\', '/'
+    $runtimeUserFilesPath = $composeUserFilesPath
+
+    if ($windowsPath -match '^([A-Za-z]):\\(.*)$') {
+        $drive = $matches[1].ToLower()
+        $rest = ($matches[2] -replace '\\', '/')
+        $runtimeUserFilesPath = "/run/desktop/mnt/host/$drive/$rest"
+    }
+
+    $envFile = Join-Path $projectRoot "infra\\compose\\.env"
+    Set-OrAppendEnvValue -FilePath $envFile -Key "USER_FILES_HOST_PATH" -Value $composeUserFilesPath
+    Set-OrAppendEnvValue -FilePath $envFile -Key "RUNTIME_USER_FILES_HOST_PATH" -Value $runtimeUserFilesPath
+}
+
+Sync-UserFilesPathEnv
+
 # 询问用户是否更新OpenClaw镜像
 Write-Host "是否需要更新OpenClaw镜像？(Y/N):" -ForegroundColor Cyan
 $updateChoice = Read-Host
