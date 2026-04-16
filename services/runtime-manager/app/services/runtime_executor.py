@@ -258,23 +258,25 @@ class RuntimeExecutor:
             logger.info(f"Resolved container storage root: {paths.container_root}")
             logger.info(f"Resolved host storage root: {paths.host_root}")
 
-            prepare_runtime_dirs(paths.host_config, paths.host_workspace)
+            # Write through the runtime-manager container's mounted path so the
+            # host bind mount stays in sync across different Windows host paths.
+            prepare_runtime_dirs(paths.container_config, paths.container_workspace)
 
             is_windows = os.name == "nt"
             if not is_windows:
                 import subprocess
 
                 try:
-                    subprocess.run(["chmod", "-R", "777", paths.host_root], check=True, capture_output=True)
-                    logger.info(f"Set permissions to 777 for {paths.host_root}")
+                    subprocess.run(["chmod", "-R", "777", paths.container_root], check=True, capture_output=True)
+                    logger.info(f"Set permissions to 777 for {paths.container_root}")
                 except Exception as exc:
                     logger.warning(f"Failed to set permissions: {exc}")
 
             logger.info("Prepared runtime dirs")
-            write_openclaw_config(paths.host_config, req.renderedConfig.openclawJson)
+            write_openclaw_config(paths.container_config, req.renderedConfig.openclawJson)
 
             if not is_windows:
-                config_file = Path(paths.host_config) / "openclaw.json"
+                config_file = Path(paths.container_config) / "openclaw.json"
                 if config_file.exists():
                     try:
                         os.chown(config_file, 1000, 1000)
