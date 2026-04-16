@@ -6,6 +6,7 @@ import shutil
 import socket
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 import docker
 from docker.errors import APIError, ImageNotFound, NotFound
@@ -37,34 +38,72 @@ class RuntimeExecutor:
     def _internal_endpoint(self, runtime_id: str) -> str:
         return f"http://rt-{runtime_id}:18789"
 
-    def _browser_url_from_route_host(self, route_host: str | None) -> str | None:
-        if not route_host:
-            return None
-        scheme = (self._settings.runtime_browser_scheme or "https").strip().lower()
-        if scheme not in {"http", "https"}:
-            scheme = "https"
-        return f"{scheme}://{route_host}"
+    def _public_host(self) -> str:
+        base_url = (self._settings.runtime_public_base_url or "").strip()
+        parsed = urlparse(base_url if "://" in base_url else f"http://{base_url}")
+        if not parsed.hostname:
+            raise RuntimeManagerError("RUNTIME_ROUTE_CONFIG_INVALID", "runtime_public_base_url is invalid", 500)
+        return parsed.hostname
 
-    def _route_host_from_container(self, container) -> str | None:
+    def _public_base_path(self) -> str:
+        base_url = (self._settings.runtime_public_base_url or "").strip()
+        parsed = urlparse(base_url if "://" in base_url else f"http://{base_url}")
+        raw_path = parsed.path.strip()
+        if not raw_path or raw_path == "/":
+            return ""
+        return f"/{raw_path.strip('/')}"
+
+    def _browser_url_from_route_path_prefix(self, route_path_prefix: str | None) -> str | None:
+        if not route_path_prefix:
+            return None
+        scheme = (self._settings.runtime_browser_scheme or "http").strip().lower()
+        if scheme not in {"http", "https"}:
+            scheme = "http"
+        host = self._public_host()
+        base_path = self._public_base_path()
+        prefix = route_path_prefix.rstrip("/")
+        return f"{scheme}://{host}{base_path}{prefix}"
+
+    def _route_path_prefix_from_container(self, container) -> str | None:
         container.reload()
         labels = container.attrs.get("Config", {}).get("Labels", {}) or {}
-        route_host = labels.get("clawloops.routeHost")
-        if isinstance(route_host, str) and route_host.strip():
-            return route_host.strip()
+        route_path_prefix = labels.get("clawloops.routePathPrefix")
+        if isinstance(route_path_prefix, str) and route_path_prefix.strip():
+            return route_path_prefix.strip()
         return None
 
-    def _router_name(self, runtime_id: str) -> str:
+    def _safe_runtime_id(self, runtime_id: str) -> str:
         safe_runtime_id = re.sub(r"[^a-z0-9-]+", "-", runtime_id.lower()).strip("-")
-        safe_runtime_id = safe_runtime_id or "runtime"
+        return safe_runtime_id or "runtime"
+
+    def _router_name(self, runtime_id: str) -> str:
+        safe_runtime_id = self._safe_runtime_id(runtime_id)
         return f"openclaw-{safe_runtime_id}"
 
-    def _with_traefik_labels(self, labels: dict[str, str], runtime_id: str, route_host: str) -> dict[str, str]:
+    def _middleware_name(self, runtime_id: str) -> str:
+        safe_runtime_id = self._safe_runtime_id(runtime_id)
+        return f"openclaw-strip-{safe_runtime_id}"
+
+    def _with_traefik_labels(
+        self,
+        labels: dict[str, str],
+        runtime_id: str,
+        route_path_prefix: str,
+    ) -> dict[str, str]:
         router_name = self._router_name(runtime_id)
+        middleware_name = self._middleware_name(runtime_id)
+        public_host = self._public_host()
+        normalized_prefix = route_path_prefix.rstrip("/")
         merged = dict(labels)
-        merged["clawloops.routeHost"] = route_host
+        merged["clawloops.routePathPrefix"] = normalized_prefix
         merged["traefik.enable"] = "true"
-        merged[f"traefik.http.routers.{router_name}.rule"] = f"Host(`{route_host}`)"
+        merged[f"traefik.http.routers.{router_name}.rule"] = (
+            f"Host(`{public_host}`) && PathPrefix(`{normalized_prefix}`)"
+        )
         merged[f"traefik.http.routers.{router_name}.entrypoints"] = "web"
+        merged[f"traefik.http.routers.{router_name}.priority"] = "200"
+        merged[f"traefik.http.routers.{router_name}.middlewares"] = middleware_name
+        merged[f"traefik.http.middlewares.{middleware_name}.stripprefix.prefixes"] = normalized_prefix
         merged[f"traefik.http.services.{router_name}.loadbalancer.server.port"] = "18789"
         return merged
 
@@ -118,7 +157,7 @@ class RuntimeExecutor:
         container = self._docker.containers.create(
             image=self._settings.runtime_openclaw_image_ref,
             command=self._settings.runtime_openclaw_command.split(" "),
-            labels=self._with_traefik_labels(labels, req.runtimeId, req.routeHost),
+            labels=self._with_traefik_labels(labels, req.runtimeId, req.routePathPrefix),
             environment={
                 "HOME": "/home/node",
                 "TERM": "xterm-256color",
@@ -253,7 +292,7 @@ class RuntimeExecutor:
                     "clawloops.userId": req.userId,
                     "clawloops.runtimeId": req.runtimeId,
                     "clawloops.volumeId": req.volumeId,
-                    "clawloops.routeHost": req.routeHost,
+                    "clawloops.routePathPrefix": req.routePathPrefix,
                     "clawloops.retentionPolicy": req.retentionPolicy,
                     "clawloops.configVersion": req.renderedConfig.configVersion,
                 }
@@ -283,7 +322,7 @@ class RuntimeExecutor:
                     500,
                 )
             
-            browser_url = self._browser_url_from_route_host(req.routeHost)
+            browser_url = self._browser_url_from_route_path_prefix(req.routePathPrefix)
             logger.info(f"Container browser URL: {browser_url}")
             
             return ContainerStateResponse(
@@ -368,7 +407,7 @@ class RuntimeExecutor:
             runtimeId=runtime_id,
             observedState=observed,  # type: ignore[arg-type]
             internalEndpoint=self._internal_endpoint(runtime_id) if observed != "deleted" else None,
-            browserUrl=self._browser_url_from_route_host(self._route_host_from_container(container))
+            browserUrl=self._browser_url_from_route_path_prefix(self._route_path_prefix_from_container(container))
             if observed != "deleted"
             else None,
             message="ok",

@@ -4,12 +4,61 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULT_REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-REPO_DIR="${1:-$DEFAULT_REPO_DIR}"
-if [[ ! -f "$REPO_DIR/infra/compose/docker-compose.yml" ]]; then
-  echo "未找到 CrewClaw 仓库：$REPO_DIR"
-  echo "用法：$0 [repo_dir]"
-  exit 1
-fi
+NON_INTERACTIVE=false
+SET_PUBLIC_BASE_URL_MODE=""
+REPO_DIR="$DEFAULT_REPO_DIR"
+
+usage() {
+  echo "用法：$0 [--non-interactive] [--set-public-base-url auto-ip] [repo_dir]"
+}
+
+parse_args() {
+  local positional=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --non-interactive)
+        NON_INTERACTIVE=true
+        shift
+        ;;
+      --set-public-base-url)
+        if [[ $# -lt 2 ]]; then
+          echo "参数错误：--set-public-base-url 需要一个值。"
+          usage
+          exit 1
+        fi
+        SET_PUBLIC_BASE_URL_MODE="$2"
+        shift 2
+        ;;
+      --help|-h)
+        usage
+        exit 0
+        ;;
+      --*)
+        echo "未知参数：$1"
+        usage
+        exit 1
+        ;;
+      *)
+        positional+=("$1")
+        shift
+        ;;
+    esac
+  done
+
+  if [[ "${#positional[@]}" -gt 1 ]]; then
+    echo "参数错误：仅支持一个 repo_dir。"
+    usage
+    exit 1
+  fi
+  if [[ "${#positional[@]}" -eq 1 ]]; then
+    REPO_DIR="${positional[0]}"
+  fi
+
+  if [[ -n "$SET_PUBLIC_BASE_URL_MODE" && "$SET_PUBLIC_BASE_URL_MODE" != "auto-ip" ]]; then
+    echo "不支持的 --set-public-base-url 模式：$SET_PUBLIC_BASE_URL_MODE（仅支持 auto-ip）"
+    exit 1
+  fi
+}
 
 need_cmd() { command -v "$1" >/dev/null 2>&1; }
 
@@ -91,12 +140,113 @@ read_env_value() {
   printf '%s\n' "${line#*=}"
 }
 
+upsert_env_value() {
+  local key="$1"
+  local value="$2"
+  local env_file="$REPO_DIR/infra/compose/.env"
+  local tmp_file
+  tmp_file="$(mktemp)"
+  awk -v k="$key" -v v="$value" '
+    BEGIN { found = 0 }
+    $0 ~ ("^" k "=") { print k "=" v; found = 1; next }
+    { print }
+    END { if (!found) print k "=" v }
+  ' "$env_file" >"$tmp_file"
+  mv "$tmp_file" "$env_file"
+}
+
+collect_ip_candidates() {
+  if ! need_cmd ip; then
+    return 0
+  fi
+
+  local default_ip all_ips
+  default_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i=1; i<=NF; i++) if ($i=="src") {print $(i+1); exit}}' || true)"
+  all_ips="$(
+    ip -4 addr show scope global up 2>/dev/null \
+      | awk '{
+          for (i = 1; i <= NF; i++) {
+            if ($i == "inet" && (i + 1) <= NF) {
+              split($(i + 1), a, "/")
+              print a[1]
+            }
+          }
+        }' \
+      || true
+  )"
+
+  if [[ -n "$default_ip" ]]; then
+    printf '%s\n' "$default_ip"
+  fi
+  if [[ -n "$all_ips" ]]; then
+    printf '%s\n' "$all_ips"
+  fi
+}
+
+suggest_runtime_public_base_url() {
+  local env_file="$REPO_DIR/infra/compose/.env"
+  local current_value current_domain suggestion
+  local -a ips=()
+  local selected_idx selected_ip
+  local i line
+
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && ips+=("$line")
+  done < <(collect_ip_candidates | awk '!seen[$0]++')
+
+  if [[ "${#ips[@]}" -eq 0 ]]; then
+    return 0
+  fi
+
+  suggestion="http://${ips[0]}"
+  current_value="$(read_env_value "RUNTIME_PUBLIC_BASE_URL" || true)"
+  current_domain="$(read_env_value "CLAWLOOPS_DOMAIN" || true)"
+
+  if [[ "$SET_PUBLIC_BASE_URL_MODE" == "auto-ip" ]]; then
+    upsert_env_value "CLAWLOOPS_DOMAIN" "${ips[0]}"
+    upsert_env_value "RUNTIME_PUBLIC_BASE_URL" "$suggestion"
+    echo "已按 auto-ip 更新 CLAWLOOPS_DOMAIN=${ips[0]}"
+    echo "已按 auto-ip 更新 RUNTIME_PUBLIC_BASE_URL=$suggestion"
+    return 0
+  fi
+
+  if [[ "$NON_INTERACTIVE" == "true" ]]; then
+    return 0
+  fi
+
+  echo "检测到本机可用 IPv4（按推荐顺序）："
+  for i in "${!ips[@]}"; do
+    printf '  %d) %s\n' "$((i + 1))" "${ips[$i]}"
+  done
+  echo "当前 CLAWLOOPS_DOMAIN=${current_domain:-<未设置>}"
+  echo "当前 RUNTIME_PUBLIC_BASE_URL=${current_value:-<未设置>}"
+  echo "建议值：$suggestion"
+  echo "输入编号选择 IP（直接回车用 1，输入 0 跳过不修改；选择后会同时更新主站入口和 Runtime 入口）："
+  read -r selected_idx
+  selected_idx="${selected_idx:-1}"
+
+  if [[ "$selected_idx" == "0" ]]; then
+    echo "已跳过 RUNTIME_PUBLIC_BASE_URL 修改。"
+    return 0
+  fi
+
+  if ! [[ "$selected_idx" =~ ^[0-9]+$ ]] || (( selected_idx < 1 || selected_idx > ${#ips[@]} )); then
+    echo "输入无效，已跳过 RUNTIME_PUBLIC_BASE_URL 修改。"
+    return 0
+  fi
+
+  selected_ip="${ips[$((selected_idx - 1))]}"
+  upsert_env_value "CLAWLOOPS_DOMAIN" "${selected_ip}"
+  upsert_env_value "RUNTIME_PUBLIC_BASE_URL" "http://${selected_ip}"
+  echo "已更新 $env_file 中的 CLAWLOOPS_DOMAIN=${selected_ip}"
+  echo "已更新 $env_file 中的 RUNTIME_PUBLIC_BASE_URL=http://${selected_ip}"
+}
+
 validate_env_file() {
   local env_file="$REPO_DIR/infra/compose/.env"
   local required_keys=(
     "CLAWLOOPS_DOMAIN"
-    "RUNTIME_MANAGER_DOMAIN"
-    "RUNTIME_ROUTE_HOST_SUFFIX"
+    "RUNTIME_PUBLIC_BASE_URL"
     "RUNTIME_BROWSER_SCHEME"
     "DASHSCOPE_API_KEY"
   )
@@ -113,23 +263,25 @@ validate_env_file() {
 }
 
 print_access_summary() {
-  local clawloops_domain runtime_manager_domain runtime_route_suffix runtime_browser_scheme
+  local clawloops_domain runtime_public_base_url
 
   clawloops_domain="$(read_env_value "CLAWLOOPS_DOMAIN")"
-  runtime_manager_domain="$(read_env_value "RUNTIME_MANAGER_DOMAIN")"
-  runtime_route_suffix="$(read_env_value "RUNTIME_ROUTE_HOST_SUFFIX")"
-  runtime_browser_scheme="$(read_env_value "RUNTIME_BROWSER_SCHEME")"
+  runtime_public_base_url="$(read_env_value "RUNTIME_PUBLIC_BASE_URL")"
 
   echo "启动完成。"
   echo "主站：http://${clawloops_domain}"
-  echo "Runtime Manager：http://${runtime_manager_domain}"
-  echo "OpenClaw Runtime 示例：${runtime_browser_scheme}://<runtimeId>.${runtime_route_suffix}/chat?session=main#token=<OpenClaw token>"
+  echo "Runtime Manager：http://${clawloops_domain}/runtime-manager"
+  echo "OpenClaw Runtime 示例：${runtime_public_base_url}/runtime/<runtimeId>/chat?session=main#token=<OpenClaw token>"
   echo "Traefik Dashboard：http://127.0.0.1:8080"
 
-  if [[ "$clawloops_domain" == *.localhost || "$runtime_manager_domain" == *.localhost ]]; then
+  if [[ "$clawloops_domain" == *.localhost ]]; then
     echo
     echo "如果浏览器无法解析 .localhost，可在 hosts 中加入："
-    echo "127.0.0.1 ${clawloops_domain} ${runtime_manager_domain}"
+    echo "127.0.0.1 ${clawloops_domain}"
+  elif [[ "$runtime_public_base_url" != "http://${clawloops_domain}" && "$runtime_public_base_url" != "https://${clawloops_domain}" ]]; then
+    echo
+    echo "注意：当前主站入口与 Runtime 对外入口不一致。"
+    echo "局域网访问时，通常应让 CLAWLOOPS_DOMAIN 与 RUNTIME_PUBLIC_BASE_URL 指向同一台机器。"
   fi
 }
 
@@ -143,14 +295,23 @@ compose_up() {
 
 main() {
   require_cmd "grep" "请先安装基础文本工具（通常系统默认自带 grep）。"
+  require_cmd "awk" "请先安装 awk。"
   require_cmd "docker" "请先安装 Docker Engine。脚本不再自动安装 Docker，以避免发行版耦合。"
 
   init_docker_cmd
   ensure_compose_available
   ensure_env_file
+  suggest_runtime_public_base_url
   validate_env_file
   compose_up
   print_access_summary
 }
+
+parse_args "$@"
+if [[ ! -f "$REPO_DIR/infra/compose/docker-compose.yml" ]]; then
+  echo "未找到 CrewClaw 仓库：$REPO_DIR"
+  usage
+  exit 1
+fi
 
 main "$@"

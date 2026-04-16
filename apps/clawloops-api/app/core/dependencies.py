@@ -219,12 +219,5 @@ def get_runtime_service(
         runtime_manager=runtime_manager_port,
         task_repo=task_repo,
         config_renderer=renderer,
-        route_host_suffix=settings.route_host_suffix,
+        runtime_route_prefix=settings.runtime_route_prefix,
     )
-
-
-def get_runtime_manager_client(
-    settings: AppSettings = Depends(get_app_settings),
-) -> RuntimeManagerClient:
-    base_url = settings.runtime_manager_base_url or "http://runtime-manager:18080"
-    return RuntimeManagerClient(base_url=base_url)

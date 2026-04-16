@@ -18,8 +18,7 @@ cp .env.example .env
 | 变量 | 说明 |
 |------|------|
 | `CLAWLOOPS_DOMAIN` | 主站域名（默认 `clawloops.localhost`），需与 Traefik 路由一致 |
-| `RUNTIME_MANAGER_DOMAIN` | Runtime Manager 子域（默认 `runtime-manager.clawloops.localhost`） |
-| `RUNTIME_ROUTE_HOST_SUFFIX` | OpenClaw Runtime 域名后缀（默认 `rt.clawloops.localhost`，实际访问形如 `<runtimeId>.<RUNTIME_ROUTE_HOST_SUFFIX>`） |
+| `RUNTIME_PUBLIC_BASE_URL` | Runtime 对外入口基地址（默认 `http://clawloops.localhost`） |
 | `RUNTIME_BROWSER_SCHEME` | Runtime 浏览器入口协议（默认 `http`；生产建议 `https`） |
 | `DASHSCOPE_API_KEY` | **必填**：阿里云 DashScope API Key，供 LiteLLM 调用模型（见 `litellm.config.yaml`） |
 | `LITELLM_MASTER_KEY` | API 与 clawloops-api 访问 LiteLLM 的密钥（默认 `sk-local-master`，生产请改掉） |
@@ -33,7 +32,7 @@ cp .env.example .env
 若使用示例里的 `*.localhost` 域名，多数系统已解析到本机；若浏览器无法访问，可在 `/etc/hosts` 增加：
 
 ```text
-127.0.0.1  clawloops.localhost runtime-manager.clawloops.localhost
+127.0.0.1  clawloops.localhost
 ```
 
 ## 3. 启动哪些容器
@@ -74,8 +73,8 @@ docker compose logs -f
 
 - 主站：`http://<CLAWLOOPS_DOMAIN>`（默认 `http://clawloops.localhost`或 `http://192.168.0.103`）
 - API：`http://<CLAWLOOPS_DOMAIN>/api/...`
-- Runtime Manager：`http://<RUNTIME_MANAGER_DOMAIN>`
-- OpenClaw Runtime：`<scheme>://<runtimeId>.<RUNTIME_ROUTE_HOST_SUFFIX>/chat?session=main#token=...`
+- Runtime Manager：`http://<CLAWLOOPS_DOMAIN>/runtime-manager`
+- OpenClaw Runtime：`<RUNTIME_PUBLIC_BASE_URL>/runtime/<runtimeId>/chat?session=main#token=...`
 - Traefik 仪表板：`http://127.0.0.1:8080`（当前配置为 insecure dashboard）
 
 ## 6. 可选：仅预热镜像
