@@ -198,6 +198,7 @@ suggest_runtime_public_base_url() {
     return 0
   fi
 
+  # 环境中读取变量
   suggestion="http://${ips[0]}"
   current_value="$(read_env_value "RUNTIME_PUBLIC_BASE_URL" || true)"
   current_domain="$(read_env_value "CLAWLOOPS_DOMAIN" || true)"
@@ -221,19 +222,22 @@ suggest_runtime_public_base_url() {
   echo "当前 CLAWLOOPS_DOMAIN=${current_domain:-<未设置>}"
   echo "当前 RUNTIME_PUBLIC_BASE_URL=${current_value:-<未设置>}"
   echo "建议值：$suggestion"
-  echo "输入编号选择 IP（直接回车用 1，输入 0 跳过不修改；选择后会同时更新主站入口和 Runtime 入口）："
-  read -r selected_idx
-  selected_idx="${selected_idx:-1}"
+  while true; do
+    echo "输入编号选择 IP（直接回车表示默认用 1 选项对应ip，选择后会同时更新主站入口和 Runtime 入口）："
+    read -r selected_idx
+    selected_idx="${selected_idx:-1}"
 
-  if [[ "$selected_idx" == "0" ]]; then
-    echo "已跳过 RUNTIME_PUBLIC_BASE_URL 修改。"
-    return 0
-  fi
+    if [[ "$selected_idx" == "0" ]]; then
+      echo "输入无效：不支持 0，请输入 1-${#ips[@]}。"
+      continue
+    fi
 
-  if ! [[ "$selected_idx" =~ ^[0-9]+$ ]] || (( selected_idx < 1 || selected_idx > ${#ips[@]} )); then
-    echo "输入无效，已跳过 RUNTIME_PUBLIC_BASE_URL 修改。"
-    return 0
-  fi
+    if ! [[ "$selected_idx" =~ ^[0-9]+$ ]] || (( selected_idx < 1 || selected_idx > ${#ips[@]} )); then
+      echo "输入无效：请输入 1-${#ips[@]}。"
+      continue
+    fi
+    break
+  done
 
   selected_ip="${ips[$((selected_idx - 1))]}"
   upsert_env_value "CLAWLOOPS_DOMAIN" "${selected_ip}"
