@@ -140,9 +140,21 @@ class RuntimeExecutor:
                     self._user_files_host_root = source
                     return source
 
+        # 如果找不到精确匹配，尝试查找父目录挂载
+        parent_mount_dir = "/var/lib/clawloops"
+        for mount in mounts:
+            if mount.get("Destination", "").rstrip("/") == parent_mount_dir:
+                source = mount.get("Source")
+                if source:
+                    # 构造完整的用户文件路径
+                    full_source = f"{source}/user-files"
+                    self._user_files_host_root = full_source
+                    logger.info(f"Using parent mount {source} with user-files subdirectory")
+                    return full_source
+
         raise RuntimeManagerError(
             "RUNTIME_STORAGE_PATH_UNRESOLVED",
-            f"failed to resolve host source for mount {mount_dir}",
+            f"failed to resolve host source for mount {mount_dir} or parent {parent_mount_dir}",
             500,
         )
 
