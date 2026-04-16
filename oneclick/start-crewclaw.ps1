@@ -79,7 +79,34 @@ function Sync-UserFilesPathEnv {
     Set-OrAppendEnvValue -FilePath $envFile -Key "RUNTIME_USER_FILES_HOST_PATH" -Value $runtimeUserFilesPath
 }
 
+function Ensure-RuntimeManagerUserFilesMount {
+    $scriptDir = Split-Path -Parent $PSCommandPath
+    $projectRoot = (Resolve-Path (Join-Path $scriptDir "..")).Path
+    $composeFile = Join-Path $projectRoot "infra\\compose\\docker-compose.yml"
+
+    if (-not (Test-Path $composeFile)) {
+        return
+    }
+
+    $content = Get-Content $composeFile -Raw
+
+    if ($content -match '(?m)^\s*-\s*/var/lib/clawloops:/var/lib/clawloops\s*$') {
+        $content = $content -replace '(?m)^(\s*)-\s*/var/lib/clawloops:/var/lib/clawloops\s*$', '$1- ${USER_FILES_HOST_PATH:-../../user-files}:/var/lib/clawloops/user-files'
+    }
+
+    if ($content -notmatch 'RUNTIME_MANAGER_CONTAINER_NAME=crewclaw-runtime-manager') {
+        $content = $content -replace '(?m)^(\s*-\s*RUNTIME_MANAGER_PORT=18080\s*)$', "`$1`r`n      - RUNTIME_MANAGER_CONTAINER_NAME=crewclaw-runtime-manager"
+    }
+
+    if ($content -notmatch 'RUNTIME_USER_FILES_HOST_PATH=\$\{RUNTIME_USER_FILES_HOST_PATH:-\}') {
+        $content = $content -replace '(?m)^(\s*-\s*RUNTIME_OPENCLAW_NETWORK=clawloops_shared\s*)$', "`$1`r`n      - RUNTIME_USER_FILES_HOST_PATH=`${RUNTIME_USER_FILES_HOST_PATH:-}"
+    }
+
+    Set-Content $composeFile -Value $content
+}
+
 Sync-UserFilesPathEnv
+Ensure-RuntimeManagerUserFilesMount
 
 # 询问用户是否更新OpenClaw镜像
 Write-Host "是否需要更新OpenClaw镜像？(Y/N):" -ForegroundColor Cyan
