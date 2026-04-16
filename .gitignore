@@ -11,3 +11,4 @@ __pycache__/
 .cursor/
 docker_test/
 docs/
+infra/compose/.env
