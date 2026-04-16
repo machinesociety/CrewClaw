@@ -104,17 +104,26 @@ class RuntimeExecutor:
             return self._user_files_host_root
 
         mount_dir = self._settings.runtime_user_files_mount_dir.rstrip("/")
-        candidate_ids = [socket.gethostname(), os.environ.get("HOSTNAME")]
+        # 使用容器名称而不是主机名，这样无论主机名是什么都能找到容器
+        container_name = os.environ.get("RUNTIME_MANAGER_CONTAINER_NAME", "crewclaw-runtime-manager")
 
-        container = None
-        for candidate in candidate_ids:
-            if not candidate:
-                continue
+        try:
+            container = self._docker.containers.get(container_name)
+        except NotFound:
+            # 如果通过名称找不到，尝试通过标签查找
             try:
-                container = self._docker.containers.get(candidate)
-                break
-            except NotFound:
-                continue
+                containers = self._docker.containers.list(filters={"label": "traefik.enable=true"})
+                for c in containers:
+                    if c.name == container_name:
+                        container = c
+                        break
+            except Exception as e:
+                logger.error(f"Failed to find container: {e}")
+                raise RuntimeManagerError(
+                    "RUNTIME_STORAGE_PATH_UNRESOLVED",
+                    "failed to resolve runtime-manager container metadata for user-files mount",
+                    500,
+                ) from e
 
         if container is None:
             raise RuntimeManagerError(
