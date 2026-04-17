@@ -36,7 +36,7 @@ services:
       - CLAWLOOPS_MODEL_GATEWAY_BASE_URL=${CLAWLOOPS_MODEL_GATEWAY_BASE_URL:-http://litellm:4000}
       - CLAWLOOPS_MODEL_GATEWAY_DEFAULT_MODELS=${CLAWLOOPS_MODEL_GATEWAY_DEFAULT_MODELS:-qwen-max-proxy}
     volumes:
-      - ../../user-files:/app/user-files
+      - ${USER_FILES_HOST_PATH:-../../user-files}:/app/user-files
     labels:
       - traefik.enable=true
       - traefik.http.routers.clawloops_api.rule=Host(`${CLAWLOOPS_DOMAIN}`) && PathPrefix(`/api`)
@@ -77,11 +77,14 @@ services:
       - PYTHONUNBUFFERED=1
       - RUNTIME_MANAGER_HOST=0.0.0.0
       - RUNTIME_MANAGER_PORT=18080
+      - RUNTIME_MANAGER_CONTAINER_NAME=crewclaw-runtime-manager
       - RUNTIME_PUBLIC_HOST=${RUNTIME_PUBLIC_HOST:-localhost}
       - RUNTIME_OPENCLAW_NETWORK=clawloops_shared
+      - RUNTIME_USER_FILES_HOST_PATH=${RUNTIME_USER_FILES_HOST_PATH:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - /var/lib/clawloops:/var/lib/clawloops
+      - ${USER_FILES_HOST_PATH:-../../user-files}:/var/lib/clawloops/user-files
+      - ${PUBLIC_AREA_HOST_PATH:-../../public-area}:/var/lib/clawloops/public-area
     labels:
       - traefik.enable=true
       - traefik.http.routers.runtime_manager.rule=Host(`${RUNTIME_MANAGER_DOMAIN}`)
@@ -127,3 +130,16 @@ networks:
     driver: bridge
 
 volumes: {}
+
+
+
+
+
+
+
+
+
+
+
+
+

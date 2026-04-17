@@ -50,6 +50,7 @@ import ForcePasswordChangePage from './pages/ForcePasswordChange';
 import DashboardPage from './pages/Dashboard';
 import WorkspaceEntryPage from './pages/WorkspaceEntry';
 import FileBrowserPage from './pages/FileBrowser';
+import PublicAreaPage from './pages/PublicArea';
 
 // Admin pages
 import AdminHomePage from './pages/admin/AdminHome';
@@ -59,6 +60,7 @@ import AdminInvitationDetailPage from './pages/admin/AdminInvitationDetail';
 import AdminModelsPage from './pages/admin/AdminModels';
 import AdminCredentialsPage from './pages/admin/AdminCredentials';
 import AdminUsagePage from './pages/admin/AdminUsage';
+import AdminPublicAreaPage from './pages/admin/AdminPublicArea';
 import UserFileManagementPage from './pages/UserFileManagement';
 
 // Error pages
@@ -85,6 +87,7 @@ function Router() {
       <Route path="/app" component={DashboardPage} />
       <Route path="/workspace-entry" component={WorkspaceEntryPage} />
       <Route path="/file-browser" component={FileBrowserPage} />
+      <Route path="/public-area" component={PublicAreaPage} />
 
       {/* Admin routes */}
       <Route path="/admin" component={AdminHomePage} />
@@ -95,6 +98,7 @@ function Router() {
       <Route path="/admin/models" component={AdminModelsPage} />
       <Route path="/admin/provider-credentials" component={AdminCredentialsPage} />
       <Route path="/admin/usage" component={AdminUsagePage} />
+      <Route path="/admin/public-area" component={AdminPublicAreaPage} />
       <Route path="/admin/user-files" component={UserFileManagementPage} />
 
       {/* System error routes (v0.5 renamed) */}
@@ -118,7 +122,7 @@ function Router() {
 function App() {
   return (
     <ErrorBoundary>
-      <ThemeProvider defaultTheme="dark">
+      <ThemeProvider defaultTheme="light">
         <AuthProvider>
           <TooltipProvider>
             <Toaster

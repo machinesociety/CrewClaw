@@ -6,6 +6,7 @@ import os
 import sys
 
 from sqlalchemy import create_engine
+from sqlalchemy import inspect, text
 from sqlalchemy.pool import StaticPool
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
@@ -81,8 +82,25 @@ def init_db() -> None:
 
     # 延迟导入以避免循环依赖。
     from app.models import invitation as invitation_models  # noqa: F401
+    from app.models import model_catalog as model_catalog_models  # noqa: F401
     from app.models import session as session_models  # noqa: F401
     from app.models import user as user_models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    _ensure_governed_model_catalog_columns()
+
+
+def _ensure_governed_model_catalog_columns() -> None:
+    inspector = inspect(engine)
+    if "governed_model_catalog" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("governed_model_catalog")}
+    if "upstream_model_id" in columns:
+        return
+
+    with engine.begin() as connection:
+        connection.execute(
+            text("ALTER TABLE governed_model_catalog ADD COLUMN upstream_model_id VARCHAR(255)")
+        )
 

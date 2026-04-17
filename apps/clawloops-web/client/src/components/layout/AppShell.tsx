@@ -1,9 +1,9 @@
-/**
+﻿/**
  * AppShell - Main application layout with sidebar
  * Design: Crafted Dark - ClawLoops Platform
  *
  * Layout: 260px fixed sidebar (dark) + scrollable content area
- * Navigation: User section (工作台, 工作区入口) + Admin section (if admin)
+ * Navigation: User section + Admin section (if admin)
  */
 
 import { cn } from '@/lib/utils';
@@ -19,11 +19,10 @@ import {
   BarChart3,
   LogOut,
   ChevronRight,
-  Settings,
   Home,
   FolderOpen,
+  Sparkles,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,10 +31,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-
-// ============================================================
-// Nav item types
-// ============================================================
 
 interface NavItem {
   label: string;
@@ -46,7 +41,8 @@ interface NavItem {
 const userNavItems: NavItem[] = [
   { label: '工作台', href: '/app', icon: LayoutDashboard },
   { label: '工作区入口', href: '/workspace-entry', icon: ExternalLink },
-  { label: '文件管理', href: '/file-browser', icon: FolderOpen },
+  { label: '文件浏览器', href: '/file-browser', icon: FolderOpen },
+  { label: '公共区域', href: '/public-area', icon: Sparkles },
 ];
 
 const adminNavItems: NavItem[] = [
@@ -55,17 +51,13 @@ const adminNavItems: NavItem[] = [
   { label: '邀请管理', href: '/admin/invitations', icon: Mail },
   { label: '模型治理', href: '/admin/models', icon: Cpu },
   { label: 'Provider 凭据', href: '/admin/provider-credentials', icon: Key },
+  { label: '公共区域管理', href: '/admin/public-area', icon: Sparkles },
   { label: '用户文件管理', href: '/admin/user-files', icon: FolderOpen },
   { label: 'Usage 汇总', href: '/admin/usage', icon: BarChart3 },
 ];
 
-// ============================================================
-// NavItem component
-// ============================================================
-
 function NavLink({ item }: { item: NavItem }) {
   const [location] = useLocation();
-  // For /admin, only exact match to avoid highlighting on all /admin/* sub-pages
   const isActive =
     item.href === '/admin'
       ? location === '/admin'
@@ -89,20 +81,16 @@ function NavLink({ item }: { item: NavItem }) {
   );
 }
 
-// ============================================================
-// Sidebar
-// ============================================================
-
 function Sidebar() {
   const { user, isAdmin, logout } = useAuth();
+  const visibleUserNavItems = isAdmin
+    ? userNavItems.filter((item) => item.href !== '/public-area')
+    : userNavItems;
 
-  const initials = user?.userId
-    ? user.userId.slice(0, 2).toUpperCase()
-    : 'CL';
+  const initials = user?.userId ? user.userId.slice(0, 2).toUpperCase() : 'CL';
 
   return (
     <aside className="w-64 flex-shrink-0 bg-sidebar border-r border-sidebar-border flex flex-col h-screen sticky top-0">
-      {/* Logo */}
       <div className="h-14 flex items-center px-4 border-b border-sidebar-border">
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-md bg-primary/20 flex items-center justify-center">
@@ -114,19 +102,16 @@ function Sidebar() {
         </div>
       </div>
 
-      {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-        {/* User section */}
         <div className="mb-4">
           <p className="text-xs font-medium text-muted-foreground/60 uppercase tracking-wider px-3 mb-2">
             用户
           </p>
-          {userNavItems.map((item) => (
+          {visibleUserNavItems.map((item) => (
             <NavLink key={item.href} item={item} />
           ))}
         </div>
 
-        {/* Admin section */}
         {isAdmin && (
           <div>
             <p className="text-xs font-medium text-muted-foreground/60 uppercase tracking-wider px-3 mb-2">
@@ -139,7 +124,6 @@ function Sidebar() {
         )}
       </nav>
 
-      {/* User footer */}
       <div className="border-t border-sidebar-border p-3">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -176,10 +160,6 @@ function Sidebar() {
   );
 }
 
-// ============================================================
-// AppShell
-// ============================================================
-
 interface AppShellProps {
   children: React.ReactNode;
 }
@@ -197,14 +177,9 @@ export function AppShell({ children }: AppShellProps) {
   );
 }
 
-// ============================================================
-// PublicShell - For login / invite pages
-// ============================================================
-
 export function PublicShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Minimal header */}
       <header className="h-14 border-b border-border flex items-center px-6">
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-md bg-primary/20 flex items-center justify-center">

@@ -110,7 +110,9 @@ class FileStorageManager:
         if os.path.exists(self.base_path):
             for item in os.listdir(self.base_path):
                 item_path = os.path.join(self.base_path, item)
-                if os.path.isdir(item_path):
+                workspace_path = os.path.join(item_path, "workspace")
+                config_path = os.path.join(item_path, "openclaw-config")
+                if os.path.isdir(item_path) and os.path.isdir(workspace_path) and os.path.isdir(config_path):
                     users.append(item)
         return users
 

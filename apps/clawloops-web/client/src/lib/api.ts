@@ -229,10 +229,17 @@ export interface Model {
   modelId: string;
   name: string;
   provider?: string;
+  pricingType?: 'free' | 'paid';
   enabled?: boolean;
   visible?: boolean;
+  userVisible?: boolean;
   isDefault?: boolean;
   policy?: Record<string, unknown>;
+  defaultRoute?: string;
+  source?: string;
+  defaultProviderCredentialId?: string;
+  runtimeRefreshTriggered?: boolean;
+  runtimeBrowserUrl?: string | null;
 }
 
 // Admin - Users
@@ -513,6 +520,11 @@ export const adminApi = {
     list: () => get<{ models: Model[] }>('/admin/models'),
     update: (modelId: string, data: Partial<Model>) =>
       put<Model>(`/admin/models/${modelId}`, data),
+    syncOpenRouter: () =>
+      post<{ fetched: number; created: number; updated: number }>(
+        '/admin/models/sync/openrouter',
+        {}
+      ),
   },
 
   // Provider Credentials

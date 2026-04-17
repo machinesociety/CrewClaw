@@ -346,6 +346,26 @@ function RuntimeCard({
 // Models Card
 // ============================================================
 
+function getPricingLabel(model: Model) {
+  if (model.pricingType === 'paid') return '付费';
+  if (model.pricingType === 'free') return '免费';
+  return '未标注';
+}
+
+function getSourceLabel(model: Model) {
+  if (!model.source) return '内置';
+
+  const sourceMap: Record<string, string> = {
+    local: '本地',
+    admin: '治理',
+    gateway: '网关',
+    openrouter: 'OpenRouter',
+    seed: '预置',
+  };
+
+  return sourceMap[model.source] || model.source;
+}
+
 function ModelsCard({ models, loading }: { models: Model[]; loading: boolean }) {
   return (
     <Card className="card-glow">
@@ -353,7 +373,9 @@ function ModelsCard({ models, loading }: { models: Model[]; loading: boolean }) 
         <CardTitle className="text-base flex items-center gap-2" style={{ fontFamily: 'Space Grotesk' }}>
           <Zap className="w-4.5 h-4.5 text-primary" />
           可用模型
-          <span className="text-xs text-muted-foreground font-normal ml-1">（只读）</span>
+          <span className="text-xs text-muted-foreground font-normal ml-1">
+            {loading ? '加载中' : `${models.length} 个`}
+          </span>
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -372,21 +394,37 @@ function ModelsCard({ models, loading }: { models: Model[]; loading: boolean }) 
             {models.map((model) => (
               <div
                 key={model.modelId}
-                className="flex items-center justify-between px-3 py-2 rounded-md bg-white/3 border border-white/5"
+                className="rounded-md border border-white/5 bg-white/3 px-3 py-3"
               >
-                <div>
-                  <p className="text-sm font-medium text-foreground">{model.name}</p>
-                  {model.provider && (
-                    <p className="text-xs text-muted-foreground">{model.provider}</p>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  {model.isDefault && (
-                    <StatusBadge variant="info">默认</StatusBadge>
-                  )}
-                  <StatusBadge variant={model.enabled ? 'success' : 'neutral'}>
-                    {model.enabled ? '启用' : '禁用'}
-                  </StatusBadge>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground">{model.name}</p>
+                    <p className="mt-1 text-[11px] text-muted-foreground break-all">
+                      {model.modelId}
+                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {model.provider && (
+                        <StatusBadge variant="neutral">{model.provider}</StatusBadge>
+                      )}
+                      <StatusBadge variant="neutral">{getSourceLabel(model)}</StatusBadge>
+                      <StatusBadge variant={model.pricingType === 'paid' ? 'warning' : 'success'}>
+                        {getPricingLabel(model)}
+                      </StatusBadge>
+                      {model.isDefault && (
+                        <StatusBadge variant="info">默认模型</StatusBadge>
+                      )}
+                    </div>
+                    {model.defaultRoute && (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        默认路由: <span className="mono text-foreground/80">{model.defaultRoute}</span>
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <StatusBadge variant={model.enabled ? 'success' : 'neutral'}>
+                      {model.enabled ? '启用' : '禁用'}
+                    </StatusBadge>
+                  </div>
                 </div>
               </div>
             ))}

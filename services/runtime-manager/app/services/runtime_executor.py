@@ -19,6 +19,7 @@ from app.schemas.contracts import (
     EnsureContainerRequest,
     StopContainerRequest,
 )
+from app.services.public_storage import sync_public_copy_for_user
 from app.services.config_writer import prepare_runtime_dirs, write_openclaw_config
 
 logging.basicConfig(level=logging.INFO)
@@ -273,6 +274,8 @@ class RuntimeExecutor:
                     logger.warning(f"Failed to set permissions: {exc}")
 
             logger.info("Prepared runtime dirs")
+            sync_public_copy_for_user(req.userId)
+            logger.info("Synced public-area copy")
             write_openclaw_config(paths.container_config, req.renderedConfig.openclawJson)
 
             if not is_windows:
