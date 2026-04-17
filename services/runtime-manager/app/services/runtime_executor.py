@@ -143,7 +143,7 @@ class RuntimeExecutor:
         return False
 
     def _create_runtime_container(self, req: EnsureContainerRequest, labels: dict[str, str], alias: str):
-        self._ensure_runtime_image_available()
+        image_ref = self._ensure_runtime_image_available()
         
         volumes = {
             req.compat.openclawConfigDir: {"bind": "/home/node/.openclaw", "mode": "rw"},
@@ -155,7 +155,7 @@ class RuntimeExecutor:
         }
 
         container = self._docker.containers.create(
-            image=self._settings.runtime_openclaw_image_ref,
+            image=image_ref,
             command=self._settings.runtime_openclaw_command.split(" "),
             labels=self._with_traefik_labels(labels, req.runtimeId, req.routePathPrefix),
             environment={
@@ -178,14 +178,36 @@ class RuntimeExecutor:
         container.start()
         return container
 
-    def _ensure_runtime_image_available(self) -> None:
+    def _pick_local_fallback_image(self, repository: str) -> str | None:
+        candidates = self._docker.images.list(name=repository)
+        for image in candidates:
+            repo_digests = image.attrs.get("RepoDigests") or []
+            for digest in repo_digests:
+                if isinstance(digest, str) and digest.startswith(f"{repository}@"):
+                    return digest
+            if image.tags:
+                return image.tags[0]
+            if image.id:
+                return image.id
+        return None
+
+    def _ensure_runtime_image_available(self) -> str:
         image_ref = self._settings.runtime_openclaw_image_ref
         try:
             self._docker.images.get(image_ref)
             logger.info("Using local runtime image: %s", image_ref)
-            return
+            return image_ref
         except ImageNotFound:
             logger.info("Local runtime image not found, pulling: %s", image_ref)
+            repository = image_ref.split("@", 1)[0].strip()
+            if repository:
+                fallback_ref = self._pick_local_fallback_image(repository)
+                if fallback_ref:
+                    logger.warning(
+                        "Configured runtime image not found; using local fallback image: %s",
+                        fallback_ref,
+                    )
+                    return fallback_ref
         except APIError as exc:
             raise RuntimeManagerError(
                 "RUNTIME_START_FAILED",
@@ -196,6 +218,7 @@ class RuntimeExecutor:
         try:
             self._docker.images.pull(image_ref)
             logger.info("Pulled runtime image successfully: %s", image_ref)
+            return image_ref
         except Exception as exc:
             raise RuntimeManagerError(
                 "RUNTIME_START_FAILED",

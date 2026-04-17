@@ -27,6 +27,7 @@ class RuntimeService:
         runtime_manager: RuntimeManagerPort,
         task_repo: RuntimeTaskRepository,
         config_renderer: RuntimeConfigRenderer,
+        runtime_route_prefix: str = "/runtime",
         route_host_suffix: str = "clawloops.example.com",
     ) -> None:
         self._binding_service = binding_service
@@ -34,7 +35,16 @@ class RuntimeService:
         self._runtime_manager = runtime_manager
         self._task_repo = task_repo
         self._config_renderer = config_renderer
+        self._runtime_route_prefix = self._normalize_runtime_route_prefix(runtime_route_prefix)
         self._route_host_suffix = route_host_suffix
+
+    @staticmethod
+    def _normalize_runtime_route_prefix(prefix: str) -> str:
+        normalized = (prefix or "/runtime").strip()
+        if not normalized.startswith("/"):
+            normalized = f"/{normalized}"
+        normalized = normalized.rstrip("/")
+        return normalized or "/runtime"
 
     def _new_task(self, user_id: str, runtime_id: str, action: RuntimeAction) -> RuntimeTask:
         task = RuntimeTask(
@@ -51,6 +61,9 @@ class RuntimeService:
     def _route_host_for_user(self, user_id: str) -> str:
         return f"u-{user_id}.{self._route_host_suffix}"
 
+    def _route_path_prefix_for_runtime(self, runtime_id: str) -> str:
+        return f"{self._runtime_route_prefix}/{runtime_id}"
+
     def ensure_running(self, user_id: str) -> RuntimeTask:
         """
         创建或启动 runtime，并回写 binding 状态。
@@ -65,10 +78,13 @@ class RuntimeService:
             openclaw_json, config_version = self._config_renderer.render(user_id, binding, model_config)
 
             route_host = self._route_host_for_user(user_id)
+            route_path_prefix = self._route_path_prefix_for_runtime(binding.runtimeId)
             payload = {
                 "userId": user_id,
                 "runtimeId": binding.runtimeId,
                 "volumeId": binding.volumeId,
+                "routePathPrefix": route_path_prefix,
+                # Backward-compat key for older runtime-manager contracts.
                 "routeHost": route_host,
                 "retentionPolicy": binding.retentionPolicy.value,
                 "compat": {
@@ -324,4 +340,3 @@ class RuntimeManagerPortAdapter(RuntimeManagerPort):
 
     def write_file(self, runtime_id: str, path: str, content: str | bytes) -> None:
         self._client.write_file(runtime_id=runtime_id, path=path, content=content)
-

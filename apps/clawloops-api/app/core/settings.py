@@ -28,6 +28,7 @@ class AppSettings(BaseSettings):
     database_url: str | None = None
     runtime_manager_base_url: str | None = None
     runtime_route_prefix: str = "/runtime"
+    route_host_suffix: str = "clawloops.localhost"
     model_gateway_base_url: str | None = None
     model_gateway_default_models: str = "qwen-max-proxy"
     litellm_api_key: str = "sk-local-master"
