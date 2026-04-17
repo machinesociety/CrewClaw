@@ -1,21 +1,36 @@
 stages:
-  - test
+  - build
+  - notice
 
-# 在 Ubuntu 197 上运行
-test-ubuntu:
-  stage: test
+build-ubuntu:
+  stage: build
   tags:
-    - ubuntu
+    - Ubuntu
   script:
-    - echo "✅ 成功在 Ubuntu 197 服务器运行 CI 任务"
-    - pwd
-    - ls -la
+    - chmod +x ./oneclick/start-crewclaw.sh
+    - ./oneclick/start-crewclaw.sh
+  only:
+    - develop 
 
-# 在 Windows 198 上运行
-test-windows:
-  stage: test
+build-windows:
+  stage: build
   tags:
-    - windows
+    - Windows
   script:
-    - echo "✅ 成功在 Windows 198 服务器运行 CI 任务"
-    - dir
+    - .\oneclick\start-crewclaw.ps1
+  only:
+    - develop 
+
+
+notice:
+  stage: notice
+  tags: 
+    - develop
+  script:
+    - echo $FEISHU_WEBHOOK
+    - chmod +x ./scripts/notice.sh
+    - ./scripts/notice.sh
+  when: always
+  allow_failure: true
+  only:
+    - develop
