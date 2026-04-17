@@ -5,7 +5,7 @@ stages:
 build-ubuntu:
   stage: build
   tags:
-    - Ubuntu
+    - ubuntu
   script:
     - chmod +x ./oneclick/start-crewclaw.sh
     - ./oneclick/start-crewclaw.sh
@@ -15,7 +15,7 @@ build-ubuntu:
 build-windows:
   stage: build
   tags:
-    - Windows
+    - windows
   script:
     - .\oneclick\start-crewclaw.ps1
   only:
