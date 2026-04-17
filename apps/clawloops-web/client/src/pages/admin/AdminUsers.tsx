@@ -211,10 +211,14 @@ function UsersListContent() {
                           variant="ghost"
                           size="sm"
                           className="h-7 text-xs gap-1"
-                          disabled={patchingUserId === user.userId || (user.status === 'active' && currentUser?.userId === user.userId)}
+                          disabled={patchingUserId === user.userId || (user.status === 'active' && (currentUser?.userId === user.userId || user.userId === 'u_seed_admin'))}
                           onClick={() => {
                             if (user.status === 'active' && currentUser?.userId === user.userId) {
                               toast.error('无法禁用自己的账号');
+                              return;
+                            }
+                            if (user.status === 'active' && user.userId === 'u_seed_admin') {
+                              toast.error('无法禁用主管理员账号');
                               return;
                             }
                             setConfirmDialog({
@@ -396,10 +400,14 @@ function UserDetailContent() {
                   size="sm"
                   variant={user.status === 'active' ? 'destructive' : 'outline'}
                   className="gap-1.5 h-7 text-xs"
-                  disabled={patchingStatus || (user.status === 'active' && currentUser?.userId === user.userId)}
+                  disabled={patchingStatus || (user.status === 'active' && (currentUser?.userId === user.userId || user.userId === 'u_seed_admin'))}
                   onClick={() => {
                     if (user.status === 'active' && currentUser?.userId === user.userId) {
                       toast.error('无法禁用自己的账号');
+                      return;
+                    }
+                    if (user.status === 'active' && user.userId === 'u_seed_admin') {
+                      toast.error('无法禁用主管理员账号');
                       return;
                     }
                     setConfirmDialog(true);
