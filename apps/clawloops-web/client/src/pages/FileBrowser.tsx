@@ -156,12 +156,20 @@ function FileBrowserContent() {
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (!files || files.length === 0) return;
+    const uploadFiles = event.target.files;
+    if (!uploadFiles || uploadFiles.length === 0) return;
 
     setIsUploading(true);
     try {
-      for (const file of files) {
+      let hasSuccess = false;
+      for (const file of uploadFiles) {
+        // 检查当前目录中是否已存在同名文件
+        const hasSameName = files.some(f => f.name === file.name);
+        if (hasSameName) {
+          toast.error('有重名文件,无法上传');
+          continue;
+        }
+
         const formData = new FormData();
         formData.append('file', file);
         formData.append('path', `${currentPath}/${file.name}`);
@@ -172,10 +180,21 @@ function FileBrowserContent() {
           body: formData,
         });
 
-        if (!res.ok) throw new Error('Failed to upload file');
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          if (errorData.detail && (errorData.detail.includes('File already exists') || errorData.detail.includes('FILE_ALREADY_EXISTS'))) {
+            toast.error('有重名文件,无法上传');
+          } else {
+            throw new Error('Failed to upload file');
+          }
+          continue;
+        }
+        hasSuccess = true;
       }
-      toast.success('文件上传成功');
-      loadFiles(currentPath);
+      if (hasSuccess) {
+        toast.success('文件上传成功');
+        loadFiles(currentPath);
+      }
     } catch (e) {
       toast.error('文件上传失败');
     } finally {
