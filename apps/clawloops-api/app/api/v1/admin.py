@@ -9,30 +9,29 @@ from sqlalchemy.orm import Session
 from app.core.auth import AuthContext
 from app.core.dependencies import (
     get_db_session_dep,
-    get_app_settings,
     get_invitation_repository,
+    get_app_settings,
+    get_model_repository,
     get_runtime_service,
     get_user_service,
     require_active_user,
 )
 from app.core.errors import AccessDeniedError, InvitationNotFoundError, UserNotFoundError
+from app.domain.models import PricingType
 from app.domain.users import UserStatus
+from app.infra.model_gateway_client import ModelGatewayClient
 from app.models.invitation import InvitationModel
 from app.models.user import UserModel, UserRuntimeBindingModel
 from app.repositories.invitation_repository import InvitationRepository
-from app.repositories.usage_repository import (
-    UsageRepository,
-    get_inmemory_usage_repository,
-)
 from app.repositories.model_repository import (
     ModelRepository,
     ProviderCredentialRepository,
     UsageRepository,
-    get_inmemory_model_repository,
     get_inmemory_provider_credential_repository,
     get_inmemory_usage_repository,
 )
 from app.schemas.admin import (
+    AdminUsagePeriod,
     AdminUsageSummaryResponse,
     AdminUserDetailResponse,
     AdminUserListResponse,
@@ -51,6 +50,12 @@ from app.services.usage_service import UsageService
 from app.services.runtime_service import RuntimeService
 from app.services.user_service import UserService
 from app.services.model_service import ModelService, ProviderCredentialService
+
+
+class SyncOpenRouterModelsResponse(BaseModel):
+    fetched: int
+    created: int
+    updated: int
 
 
 router = APIRouter(tags=["admin"])
@@ -133,7 +138,7 @@ def _require_admin(ctx: AuthContext = Depends(require_active_user)) -> AuthConte
     return ctx
 
 
-def get_model_service(model_repo: ModelRepository = Depends(get_inmemory_model_repository)) -> ModelService:
+def get_model_service(model_repo: ModelRepository = Depends(get_model_repository)) -> ModelService:
     return ModelService(model_repo=model_repo)
 
 
@@ -316,7 +321,7 @@ async def get_admin_user_runtime(
 async def list_admin_models(
     _: AuthContext = Depends(_require_admin),
     service: ModelService = Depends(get_model_service),
-    model_repo: ModelRepository = Depends(get_inmemory_model_repository),
+    model_repo: ModelRepository = Depends(get_model_repository),
     settings=Depends(get_app_settings),
 ) -> AdminModelListResponse:
     model_base_url = settings.model_gateway_base_url or "http://litellm:4000"
@@ -372,40 +377,91 @@ async def list_admin_models(
                 name=model.name,
                 provider=model.provider,
                 source=model.source.value,
+                pricingType=model.pricing_type.value,
                 enabled=model.enabled,
                 defaultRoute=model.default_route,
                 userVisible=model.user_visible,
                 defaultProviderCredentialId=model.default_provider_credential_id,
+                runtimeRefreshTriggered=False,
+                runtimeBrowserUrl=None,
             )
             for model in models
         ]
     )
 
 
-@router.put("/admin/models/{model_id}", response_model=AdminModelItem)
+@router.put("/admin/models/{model_id:path}", response_model=AdminModelItem)
 async def update_admin_model(
     model_id: str,
     body: UpdateAdminModelRequest,
-    _: AuthContext = Depends(_require_admin),
+    ctx: AuthContext = Depends(_require_admin),
     service: ModelService = Depends(get_model_service),
+    settings=Depends(get_app_settings),
+    runtime_service: RuntimeService = Depends(get_runtime_service),
+    user_service: UserService = Depends(get_user_service),
 ) -> AdminModelItem:
     model = service.update_model(
         model_id,
         enabled=body.enabled,
         user_visible=body.userVisible,
+        pricing_type=None if body.pricingType is None else PricingType(body.pricingType),
         default_route=body.defaultRoute,
         default_provider_credential_id=body.defaultProviderCredentialId,
     )
+    if model.provider == "openrouter" and model.enabled and model.user_visible:
+        upstream_model_id = service.resolve_openrouter_upstream_model_id(
+            model,
+            openrouter_base_url=settings.openrouter_base_url,
+            openrouter_api_key=settings.provider_openrouter_api_key or settings.openrouter_api_key,
+        )
+        if upstream_model_id:
+            client = ModelGatewayClient(
+                settings.model_gateway_base_url or "http://litellm:4000",
+                api_key=settings.litellm_api_key,
+                timeout_seconds=10.0,
+            )
+            client.register_model(
+                model.model_id,
+                {
+                    "model": f"openrouter/{upstream_model_id}",
+                    "api_key": "os.environ/OPENROUTER_API_KEY",
+                },
+            )
+    runtime_refresh_triggered = False
+    runtime_browser_url: str | None = None
+    # If the current admin already has a workspace binding, refresh its runtime
+    # so OpenClaw can pick up newly enabled/visible model routes immediately.
+    if user_service.get_runtime_binding(ctx.userId) is not None:
+        runtime_service.ensure_running(ctx.userId)
+        runtime_refresh_triggered = True
+        binding = user_service.get_runtime_binding(ctx.userId)
+        runtime_browser_url = binding.browser_url if binding is not None else None
     return AdminModelItem(
         modelId=model.model_id,
         name=model.name,
         provider=model.provider,
         source=model.source.value,
+        pricingType=model.pricing_type.value,
         enabled=model.enabled,
         defaultRoute=model.default_route,
         userVisible=model.user_visible,
         defaultProviderCredentialId=model.default_provider_credential_id,
+        runtimeRefreshTriggered=runtime_refresh_triggered,
+        runtimeBrowserUrl=runtime_browser_url,
     )
+
+
+@router.post("/admin/models/sync/openrouter", response_model=SyncOpenRouterModelsResponse)
+async def sync_openrouter_models(
+    _: AuthContext = Depends(_require_admin),
+    settings=Depends(get_app_settings),
+    service: ModelService = Depends(get_model_service),
+) -> SyncOpenRouterModelsResponse:
+    stats = service.sync_openrouter_models(
+        openrouter_base_url=settings.openrouter_base_url,
+        openrouter_api_key=settings.openrouter_api_key,
+    )
+    return SyncOpenRouterModelsResponse(**stats)
 
 
 @router.get("/admin/provider-credentials", response_model=ProviderCredentialListResponse)
@@ -478,9 +534,16 @@ async def get_admin_usage_summary(
     service: UsageService = Depends(get_usage_service),
 ) -> AdminUsageSummaryResponse:
     summary = service.get_total_usage()
+    now = datetime.now(timezone.utc)
+    start = now - timedelta(days=30)
     return AdminUsageSummaryResponse(
+        totalRequests=0,
         totalTokens=summary.total_tokens,
         usedTokens=summary.used_tokens,
+        totalCost=0.0,
+        byModel=[],
+        byUser=[],
+        period=AdminUsagePeriod(from_=start.isoformat(), to=now.isoformat()),
     )
 
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from app.domain.runtime import RuntimeTask
@@ -16,14 +16,18 @@ class ModelConfig:
 
     base_url: str
     models: list[str]
+    model_pricing: dict[str, str]
     gateway_access_token_ref: str
     config_render_version: str
+    model_routes: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def from_response(cls, resp: ModelConfigResponse) -> "ModelConfig":
         return cls(
             base_url=resp.baseUrl,
             models=resp.models,
+            model_pricing=resp.modelPricing or {},
+            model_routes=resp.modelRoutes or {},
             gateway_access_token_ref=resp.gatewayAccessTokenRef,
             config_render_version=resp.configRenderVersion,
         )
@@ -101,4 +105,3 @@ class RuntimeTaskRepository(Protocol):
         
     def get_active_tasks_for_user(self, user_id: str, runtime_id: str) -> list[RuntimeTask]:
         ...
-

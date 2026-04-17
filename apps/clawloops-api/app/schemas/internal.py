@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SyncUserRequest(BaseModel):
@@ -28,6 +28,8 @@ class RuntimeBindingStateUpdateRequest(BaseModel):
 class ModelConfigResponse(BaseModel):
     baseUrl: str
     models: list[str]
+    modelPricing: dict[str, str] = Field(default_factory=dict)
+    modelRoutes: dict[str, str] = Field(default_factory=dict)
     gatewayAccessTokenRef: str
     configRenderVersion: str
 

@@ -8,6 +8,7 @@ from app.core.settings import AppSettings, get_settings
 from app.infra.runtime_manager_client import RuntimeManagerClient
 from app.repositories.session_repository import SqlAlchemySessionRepository, SessionRepository
 from app.repositories.invitation_repository import InvitationRepository, SqlAlchemyInvitationRepository
+from app.repositories.model_repository import ModelRepository, SqlAlchemyModelRepository
 from app.repositories.user_repository import (
     InMemoryUserRepository,
     SqlAlchemyUserRepository,
@@ -77,6 +78,12 @@ def get_session_repository(
     return SqlAlchemySessionRepository(db)
 
 
+def get_model_repository(
+    db: Session = Depends(get_db_session_dep),
+) -> ModelRepository:
+    return SqlAlchemyModelRepository(db)
+
+
 def get_invitation_repository(
     db: Session = Depends(get_db_session_dep),
 ) -> InvitationRepository:
@@ -136,6 +143,7 @@ def get_runtime_service(
     user_service: UserService = Depends(get_user_service),
     settings: AppSettings = Depends(get_app_settings),
     task_repo: InMemoryRuntimeTaskRepository = Depends(get_runtime_task_repository),
+    model_repo: ModelRepository = Depends(get_model_repository),
 ) -> RuntimeService:
     """
     组装 RuntimeService 所需依赖。
@@ -193,12 +201,54 @@ def get_runtime_service(
 
     def get_model_config(user_id: str) -> ModelConfigResponse:
         model_base_url = settings.model_gateway_base_url or "http://litellm:4000"
-        preferred_models = settings.get_model_gateway_default_models()
+        # 以平台“已上架+可见”的模型为用户可用模型集合（单一事实源）。
+        # 这里仅输出模型 id 列表，具体是否网关可用仍以 /v1/models 交集为准。
+        from app.domain.models import PricingType
+        from app.services.model_service import ModelService
+
+        service = ModelService(model_repo=model_repo)
+        governed_models = service.filter_models_by_provider_readiness(
+            service.list_models_for_user(user_id),
+            settings.is_provider_ready,
+        )
+        governed_models = service.prioritize_models(
+            governed_models,
+            settings.get_model_gateway_default_models(),
+        )
+        preferred_models = [m.model_id for m in governed_models]
 
         from app.infra.model_gateway_client import ModelGatewayClient
 
         client = ModelGatewayClient(model_base_url, api_key=settings.litellm_api_key)
+        service.ensure_openrouter_models_registered(
+            governed_models,
+            model_gateway_client=client,
+            openrouter_base_url=settings.openrouter_base_url,
+            openrouter_api_key=settings.provider_openrouter_api_key or settings.openrouter_api_key,
+        )
         payload = client.get_user_model_config(user_id=user_id, preferred_models=preferred_models)
+        # 补充模型价格类型映射，供 OpenClaw UI 展示（免费/付费）
+        model_pricing = {
+            m.model_id: (PricingType.FREE.value if m.pricing_type == PricingType.FREE else PricingType.PAID.value)
+            for m in governed_models
+        }
+        resolved_models = payload.get("models", []) if isinstance(payload, dict) else []
+        resolved_model_ids = {
+            model_id
+            for model_id in resolved_models
+            if isinstance(model_id, str)
+        }
+        model_routes = {
+            m.model_id: (
+                m.default_route
+                if m.provider == "ollama" and m.default_route
+                else f"litellm/{m.model_id}"
+            )
+            for m in governed_models
+            if m.model_id in resolved_model_ids
+        }
+        if isinstance(payload, dict):
+            payload = {**payload, "modelPricing": model_pricing, "modelRoutes": model_routes}
         return ModelConfigResponse(**payload)
 
     binding_port = UserRuntimeBindingServiceAdapter(
@@ -211,7 +261,10 @@ def get_runtime_service(
     runtime_manager_client = RuntimeManagerClient(base_url=base_url)
     runtime_manager_port = RuntimeManagerPortAdapter(runtime_manager_client)
 
-    renderer = RuntimeConfigRenderer(litellm_api_key=settings.litellm_api_key)
+    renderer = RuntimeConfigRenderer(
+        litellm_api_key=settings.litellm_api_key,
+        ollama_base_url=settings.ollama_base_url or "http://ollama:11434",
+    )
 
     return RuntimeService(
         binding_service=binding_port,
@@ -219,12 +272,5 @@ def get_runtime_service(
         runtime_manager=runtime_manager_port,
         task_repo=task_repo,
         config_renderer=renderer,
-        runtime_route_prefix=settings.runtime_route_prefix,
+        route_host_suffix=settings.route_host_suffix,
     )
-
-
-def get_runtime_manager_client(
-    settings: AppSettings = Depends(get_app_settings),
-) -> RuntimeManagerClient:
-    base_url = settings.runtime_manager_base_url or "http://runtime-manager:18080"
-    return RuntimeManagerClient(base_url=base_url)

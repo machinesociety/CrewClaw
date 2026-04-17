@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class UpdateUserStatusRequest(BaseModel):
@@ -66,9 +66,10 @@ class AdminUsageByUser(BaseModel):
     cost: float | None = None
 
 class AdminUsageSummaryResponse(BaseModel):
-    totalRequests: int
+    totalRequests: int = 0
     totalTokens: int
-    totalCost: float
-    byModel: list[AdminUsageByModel]
-    byUser: list[AdminUsageByUser]
+    usedTokens: int = 0
+    totalCost: float = 0.0
+    byModel: list[AdminUsageByModel] = Field(default_factory=list)
+    byUser: list[AdminUsageByUser] = Field(default_factory=list)
     period: AdminUsagePeriod

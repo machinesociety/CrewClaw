@@ -27,6 +27,7 @@ def test_models_list_and_usage_summary(client):
     assert "models" in data
     assert data["models"]
     first_model = data["models"][0]
+    assert first_model["modelId"] == "qwen-max-proxy"
     assert "modelId" in first_model
     assert "defaultRoute" in first_model
     assert "internalEndpoint" not in first_model
@@ -45,7 +46,7 @@ def test_removed_user_configuration_interfaces_are_not_exposed(client):
 
     assert client.get("/api/v1/models/bindings", headers=headers).status_code == status.HTTP_404_NOT_FOUND
     assert client.put(
-        "/api/v1/models/gpt-4-mini/binding",
+        "/api/v1/models/qwen-max-proxy/binding",
         headers=headers,
         json={"credentialId": "cred_001"},
     ).status_code == status.HTTP_404_NOT_FOUND
@@ -55,4 +56,3 @@ def test_removed_user_configuration_interfaces_are_not_exposed(client):
         headers=headers,
         json={"provider": "openai", "name": "default", "secret": "sk-test"},
     ).status_code == status.HTTP_404_NOT_FOUND
-

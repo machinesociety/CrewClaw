@@ -5,6 +5,10 @@ services:
     image: traefik:v3.6.7
     container_name: crewclaw-traefik
     restart: unless-stopped
+    environment:
+      - DOCKER_API_VERSION=1.44
+      - NO_PROXY=localhost,127.0.0.1,::1,clawloops-web,clawloops-api,runtime-manager,litellm,ollama,traefik
+      - no_proxy=localhost,127.0.0.1,::1,clawloops-web,clawloops-api,runtime-manager,litellm,ollama,traefik
     command:
       - --configFile=/etc/traefik/traefik.yml
     ports:
@@ -29,14 +33,22 @@ services:
     restart: unless-stopped
     environment:
       - PYTHONUNBUFFERED=1
+      - CLAWLOOPS_DATABASE_URL=${CLAWLOOPS_DATABASE_URL:-sqlite:////var/lib/clawloops-api/clawloops.db}
+      - NO_PROXY=localhost,127.0.0.1,::1,clawloops-web,clawloops-api,runtime-manager,litellm,ollama,traefik
+      - no_proxy=localhost,127.0.0.1,::1,clawloops-web,clawloops-api,runtime-manager,litellm,ollama,traefik
+      - CLAWLOOPS_ROUTE_HOST_SUFFIX=${CLAWLOOPS_DOMAIN}
       - CLAWLOOPS_LITELLM_API_KEY=${LITELLM_MASTER_KEY:-sk-local-master}
       - CLAWLOOPS_MODEL_GATEWAY_BASE_URL=${CLAWLOOPS_MODEL_GATEWAY_BASE_URL:-http://litellm:4000}
       - CLAWLOOPS_MODEL_GATEWAY_DEFAULT_MODELS=${CLAWLOOPS_MODEL_GATEWAY_DEFAULT_MODELS:-qwen-max-proxy}
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+    volumes:
+      - clawloops_api_data:/var/lib/clawloops-api
     labels:
       - traefik.enable=true
       - traefik.http.routers.clawloops_api.rule=Host(`${CLAWLOOPS_DOMAIN}`) && PathPrefix(`/api`)
       - traefik.http.routers.clawloops_api.entrypoints=web
-      - traefik.http.routers.clawloops_api.priority=100
       - traefik.http.services.clawloops_api.loadbalancer.server.port=8000
     networks:
       - clawloops_shared
@@ -53,11 +65,12 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
+      - NO_PROXY=localhost,127.0.0.1,::1,clawloops-web,clawloops-api,runtime-manager,litellm,ollama,traefik
+      - no_proxy=localhost,127.0.0.1,::1,clawloops-web,clawloops-api,runtime-manager,litellm,ollama,traefik
     labels:
       - traefik.enable=true
       - traefik.http.routers.clawloops_web.rule=Host(`${CLAWLOOPS_DOMAIN}`)
       - traefik.http.routers.clawloops_web.entrypoints=web
-      - traefik.http.routers.clawloops_web.priority=1
       - traefik.http.services.clawloops_web.loadbalancer.server.port=3000
     networks:
       - clawloops_shared
@@ -74,20 +87,15 @@ services:
       - PYTHONUNBUFFERED=1
       - RUNTIME_MANAGER_HOST=0.0.0.0
       - RUNTIME_MANAGER_PORT=18080
-      - RUNTIME_BROWSER_SCHEME=${RUNTIME_BROWSER_SCHEME:-https}
-      - RUNTIME_PUBLIC_BASE_URL=${RUNTIME_PUBLIC_BASE_URL:-http://${CLAWLOOPS_DOMAIN}}
+      - RUNTIME_PUBLIC_HOST=${RUNTIME_PUBLIC_HOST:-localhost}
       - RUNTIME_OPENCLAW_NETWORK=clawloops_shared
-      - RUNTIME_OPENCLAW_IMAGE_REF=${RUNTIME_OPENCLAW_IMAGE_REF:-ghcr.io/openclaw/openclaw@sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /var/lib/clawloops:/var/lib/clawloops
     labels:
       - traefik.enable=true
-      - traefik.http.routers.runtime_manager.rule=Host(`${CLAWLOOPS_DOMAIN}`) && PathPrefix(`/runtime-manager`)
+      - traefik.http.routers.runtime_manager.rule=Host(`${RUNTIME_MANAGER_DOMAIN}`)
       - traefik.http.routers.runtime_manager.entrypoints=web
-      - traefik.http.routers.runtime_manager.priority=110
-      - traefik.http.routers.runtime_manager.middlewares=runtime_manager_strip
-      - traefik.http.middlewares.runtime_manager_strip.stripprefix.prefixes=/runtime-manager
       - traefik.http.services.runtime_manager.loadbalancer.server.port=18080
     networks:
       - clawloops_shared
@@ -97,27 +105,60 @@ services:
   prewarm-openclaw:
     profiles:
       - prewarm
-    image: "${RUNTIME_OPENCLAW_IMAGE_REF:-ghcr.io/openclaw/openclaw@sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02}"
+    image: "ghcr.io/openclaw/openclaw@sha256:0b2170d5ec3a487a6313ed0556d377c5c5c80a0f806043daa2e685a4bedd45e3"
 
   prewarm-litellm:
     profiles:
       - prewarm
-    image: "ghcr.io/berriai/litellm:v1.82.3-stable"
+    image: "ghcr.io/berriai/litellm:v1.81.3-stable"
+
+  # Optional local Ollama service. Enable with `--profile ollama`.
+  ollama:
+    profiles:
+      - ollama
+    image: "ollama/ollama:latest"
+    container_name: crewclaw-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - clawloops_shared
+
+  litellm-db:
+    image: postgres:16-alpine
+    container_name: crewclaw-litellm-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=litellm
+      - POSTGRES_USER=litellm
+      - POSTGRES_PASSWORD=litellm
+    volumes:
+      - litellm_db_data:/var/lib/postgresql/data
+    networks:
+      - clawloops_shared
 
   litellm:
-    image: "ghcr.io/berriai/litellm:v1.82.3-stable"
+    image: "ghcr.io/berriai/litellm:v1.81.3-stable"
     container_name: crewclaw-litellm
     restart: unless-stopped
+    depends_on:
+      - litellm-db
+    entrypoint:
+      - /bin/sh
+      - -lc
     command:
-      - --config
-      - /app/config.yaml
-      - --host
-      - "0.0.0.0"
-      - --port
-      - "4000"
+      - |
+        export DASHSCOPE_API_KEY="$${DASHSCOPE_API_KEY#dashscope:}"
+        exec litellm --config /app/config.yaml --host 0.0.0.0 --port 4000
     environment:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-local-master}
+      - DATABASE_URL=${LITELLM_DATABASE_URL:-postgresql://litellm:litellm@litellm-db:5432/litellm}
+      - STORE_MODEL_IN_DB=True
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - NO_PROXY=localhost,127.0.0.1,::1,ollama,litellm
+      - no_proxy=localhost,127.0.0.1,::1,ollama,litellm
     volumes:
       - ./litellm.config.yaml:/app/config.yaml:ro
     networks:
@@ -128,4 +169,7 @@ networks:
     name: clawloops_shared
     driver: bridge
 
-volumes: {}
+volumes:
+  clawloops_api_data:
+  litellm_db_data:
+  ollama_data:

@@ -175,4 +175,3 @@ def test_workspace_entry_redirect_ready_runtime(client_with_inmemory):
     )
     assert resp.status_code == status.HTTP_307_TEMPORARY_REDIRECT
     assert resp.headers["location"] == ready_url
-
