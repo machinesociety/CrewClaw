@@ -60,7 +60,18 @@ function formatExpiry(expiresAt: string): string {
   try {
     const d = new Date(expiresAt);
     const now = new Date();
-    const diffMs = d.getTime() - now.getTime();
+    
+    // 转换为北京时间（UTC+8）
+    const getBeijingTime = (date: Date) => {
+      const utc = date.getTime();
+      return new Date(utc + 8 * 60 * 60 * 1000);
+    };
+    
+    const dBeijing = getBeijingTime(d);
+    const nowBeijing = getBeijingTime(now);
+    
+    // 计算时间差（毫秒）
+    const diffMs = dBeijing.getTime() - nowBeijing.getTime();
     const diffH = Math.floor(diffMs / (1000 * 60 * 60));
     const diffD = Math.floor(diffH / 24);
     if (diffMs < 0) return '已过期';

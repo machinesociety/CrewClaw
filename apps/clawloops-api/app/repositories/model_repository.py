@@ -45,14 +45,14 @@ class UsageRepository(Protocol):
 class InMemoryModelRepository:
     def __init__(self) -> None:
         self._models: dict[str, Model] = {
-            "gpt-4-mini": Model(
-                model_id="gpt-4-mini",
-                name="GPT-4 Mini",
-                provider="openai",
+            "qwen3.6-plus": Model(
+                model_id="qwen3.6-plus",
+                name="Qwen 3.6 Plus",
+                provider="baidu",
                 source=ModelSource.SHARED,
                 enabled=True,
                 user_visible=True,
-                default_route="openai/gpt-4-mini",
+                default_route="baidu/qwen3.6-plus",
                 default_provider_credential_id=None,
             )
         }

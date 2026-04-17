@@ -550,11 +550,23 @@ class RuntimeExecutor:
         try:
             container = self._get_container_by_id(container_id)
 
+            # 检查文件是否已存在
+            file_dir = os.path.dirname(path)
+            file_name = os.path.basename(path)
+            
+            # 列出目录中的文件
+            files = self.list_files(container_id, file_dir)
+            for file in files:
+                if file['name'] == file_name and file['type'] == 'file':
+                    raise RuntimeManagerError(
+                        "FILE_ALREADY_EXISTS",
+                        f"File already exists: {path}",
+                        409,
+                    )
+
             import tarfile
             from io import BytesIO
 
-            file_dir = os.path.dirname(path)
-            file_name = os.path.basename(path)
             content_bytes = content.encode("utf-8") if isinstance(content, str) else content
 
             tar_buffer = BytesIO()

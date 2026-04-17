@@ -103,7 +103,7 @@ async def preview_invitation(
             workspaceName=record.workspace_name,
             role=record.role,
             status=record.status,
-            expiresAt=record.expires_at.isoformat(),
+            expiresAt=record.expires_at.replace(tzinfo=timezone.utc).isoformat(),
         ),
     )
 
@@ -170,11 +170,13 @@ async def accept_invitation(
     # First consume path: create user if needed, set password, consume invitation
     if existing_user is None:
         user_id = f"u_{hashlib.sha256(f'{body.username}{now.isoformat()}'.encode('utf-8')).hexdigest()[:12]}"
+        # Use the role from the invitation
+        user_role = UserRole.ADMIN if record.role == 'admin' else UserRole.USER
         user = User(
             user_id=user_id,
             subject_id=f"clawloops:{user_id}",
             tenant_id="t_default",
-            role=UserRole.USER,
+            role=user_role,
             status=UserStatus.ACTIVE,
             username=body.username,
             password_hash=hash_password_pbkdf2_sha256(body.password),
@@ -188,6 +190,9 @@ async def accept_invitation(
         # If user already has password_hash, treat as already onboarded and reject.
         if existing_user.password_hash:
             raise InvitationAlreadyConsumedError()
+        # Update user role if invitation role is admin
+        if record.role == 'admin' and existing_user.role != UserRole.ADMIN:
+            existing_user.role = UserRole.ADMIN
         existing_user.password_hash = hash_password_pbkdf2_sha256(body.password)
         existing_user.last_login_at = now
         user_repo.save(existing_user)
