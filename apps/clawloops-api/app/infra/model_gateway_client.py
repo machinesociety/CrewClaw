@@ -59,13 +59,6 @@ class ModelGatewayClient:
         _ = user_id
 
         resolved_models = [m for m in preferred_models if m]
-        try:
-            available = set(self.list_models())
-            filtered = [m for m in resolved_models if m in available]
-            if filtered:
-                resolved_models = filtered
-        except Exception:
-            pass
 
         return {
             "baseUrl": self._base_url,

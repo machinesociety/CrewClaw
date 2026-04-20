@@ -35,6 +35,9 @@ services:
       - CLAWLOOPS_LITELLM_API_KEY=${LITELLM_MASTER_KEY:-sk-local-master}
       - CLAWLOOPS_MODEL_GATEWAY_BASE_URL=${CLAWLOOPS_MODEL_GATEWAY_BASE_URL:-http://litellm:4000}
       - CLAWLOOPS_MODEL_GATEWAY_DEFAULT_MODELS=${CLAWLOOPS_MODEL_GATEWAY_DEFAULT_MODELS:-qwen-max-proxy}
+      - CLAWLOOPS_OPENROUTER_API_KEY=${CLAWLOOPS_OPENROUTER_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
     volumes:
       - ${USER_FILES_HOST_PATH:-../../user-files}:/app/user-files
     labels:
@@ -119,6 +122,7 @@ services:
     environment:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-local-master}
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
     volumes:
       - ./litellm.config.yaml:/app/config.yaml:ro
     networks:
@@ -130,7 +134,6 @@ networks:
     driver: bridge
 
 volumes: {}
-
 
 
 

@@ -352,9 +352,21 @@ try {
         $envFile = "infra\compose\.env"
         if (Test-Path $envFile) {
             $envContent = Get-Content $envFile
-            $envContent[0] = "CLAWLOOPS_DOMAIN=clawloops.$localIP.nip.io"
-            $envContent[1] = "RUNTIME_MANAGER_DOMAIN=runtime-manager.$localIP.nip.io"
+            $envContent[0] = "CLAWLOOPS_DOMAIN=clawloops.$localIP"
+            $envContent[1] = "RUNTIME_MANAGER_DOMAIN=runtime-manager.$localIP"
             $envContent[2] = "RUNTIME_PUBLIC_HOST=$localIP"
+            if ($envContent.Count -lt 5) {
+                $envContent = @(
+                    $envContent[0]
+                    $envContent[1]
+                    $envContent[2]
+                    "RUNTIME_PUBLIC_BASE_URL=http://$localIP"
+                    "RUNTIME_BROWSER_SCHEME=http"
+                ) + $envContent[3..($envContent.Count - 1)]
+            } else {
+                $envContent[3] = "RUNTIME_PUBLIC_BASE_URL=http://$localIP"
+                $envContent[4] = "RUNTIME_BROWSER_SCHEME=http"
+            }
             Set-Content $envFile -Value $envContent
         }
         
@@ -378,14 +390,17 @@ try {
 # 7. 自动打开浏览器
 # ----------------------------
 try {
-    # 读取更新后的 .env 文件，获取实际的访问地址
+    # 读取更新后的 .env 文件，获取实际的访问IP
     $envFile = "infra\compose\.env"
     if (Test-Path $envFile) {
         $envContent = Get-Content $envFile
-        $clawloopsDomain = $envContent[0].Split('=')[1]
-        $accessUrl = "http://$clawloopsDomain"
+        # 直接使用IP地址访问，避免依赖hosts文件配置
+        $runtimePublicHost = $envContent[2].Split('=')[1]
+        $accessUrl = "http://$runtimePublicHost"
         
+        Write-Host "正在打开浏览器，访问地址: $accessUrl" -ForegroundColor Green
         Start-Process $accessUrl
     }
 } catch {
+    Write-Host "打开浏览器时出错: $($_.Exception.Message)" -ForegroundColor Red
 }

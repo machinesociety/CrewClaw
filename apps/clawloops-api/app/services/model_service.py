@@ -14,14 +14,23 @@ from app.repositories.model_repository import ModelRepository, ProviderCredentia
 
 
 def build_openrouter_safe_model_id(model_id: str) -> str:
+    """
+    Convert OpenRouter model ids like `z-ai/glm-4.5-air:free` into a
+    Control-UI-safe alias such as `openrouter-z-ai-glm-4-5-air-free`.
+    """
     normalized = re.sub(r"[^a-zA-Z0-9]+", "-", model_id).strip("-").lower()
     return f"openrouter-{normalized}" if normalized else "openrouter-model"
 
 
 class ModelService:
-    """模型治理与用户侧只读模型列表服务。"""
+    """
+    模型治理与用户侧只读模型列表服务。
+    """
 
-    def __init__(self, model_repo: ModelRepository) -> None:
+    def __init__(
+        self,
+        model_repo: ModelRepository,
+    ) -> None:
         self._model_repo = model_repo
 
     def list_models_for_user(self, user_id: str) -> list[Model]:
@@ -41,6 +50,9 @@ class ModelService:
 
     @staticmethod
     def prioritize_models(models: list[Model], preferred_model_ids: list[str]) -> list[Model]:
+        """
+        按 preferred_model_ids 提升排序优先级，其他模型保持原有相对顺序。
+        """
         if not preferred_model_ids:
             return list(models)
 
@@ -91,6 +103,13 @@ class ModelService:
         openrouter_base_url: str,
         openrouter_api_key: str | None = None,
     ) -> dict:
+        """
+        从 OpenRouter 同步模型列表到平台注册表。
+        规则：
+        - pricingType：若模型 id 以 ':free' 结尾则标注为 free，否则为 paid
+        - 不覆盖管理员已有的 enabled/user_visible/default_route/default_provider_credential_id
+        - 若模型不存在则创建（默认 enabled=False, user_visible=False，避免误上架）
+        """
         client = OpenRouterClient(base_url=openrouter_base_url, api_key=openrouter_api_key)
         entries = client.list_models()
 
@@ -171,9 +190,14 @@ class ModelService:
         openrouter_base_url: str,
         openrouter_api_key: str | None = None,
     ) -> list[str]:
+        """
+        确保当前治理面板中“已上架且可见”的 OpenRouter 模型已注册到 LiteLLM。
+        返回本次成功处理（已存在或已注册）的平台注册 model_id 列表。
+        """
         if not models:
             return []
 
+        available_models = set()
         try:
             available_models = set(model_gateway_client.list_models())
         except Exception:

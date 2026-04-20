@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -10,7 +10,7 @@ REPO_DIR="$DEFAULT_REPO_DIR"
 DOCKER_CMD=(docker)
 
 usage() {
-  echo "用法：$0 [--non-interactive] [--set-public-base-url auto-ip] [repo_dir]"
+  echo "用法：0 [--non-interactive] [--set-public-base-url auto-ip] [repo_dir]"
 }
 
 parse_args() {
@@ -23,7 +23,7 @@ parse_args() {
         ;;
       --set-public-base-url)
         if [[ $# -lt 2 ]]; then
-          echo "参数错误：--set-public-base-url 需要一个值。"
+          echo "参数错误：--set-public-base-url 需要一个参数"
           usage
           exit 1
         fi
@@ -35,7 +35,7 @@ parse_args() {
         exit 0
         ;;
       --*)
-        echo "未知参数：$1"
+        echo "未知错误：$1"
         usage
         exit 1
         ;;
@@ -47,7 +47,7 @@ parse_args() {
   done
 
   if [[ "${#positional[@]}" -gt 1 ]]; then
-    echo "参数错误：仅支持一个 repo_dir。"
+    echo "参数错误：只能指定一个repo_dir参数"
     usage
     exit 1
   fi
@@ -56,7 +56,7 @@ parse_args() {
   fi
 
   if [[ -n "$SET_PUBLIC_BASE_URL_MODE" && "$SET_PUBLIC_BASE_URL_MODE" != "auto-ip" ]]; then
-    echo "不支持的 --set-public-base-url 模式：$SET_PUBLIC_BASE_URL_MODE（仅支持 auto-ip）"
+    echo "参数错误：--set-public-base-url 参数只能是 auto-ip"
     exit 1
   fi
 }
@@ -67,7 +67,7 @@ require_cmd() {
   local cmd="$1"
   local hint="$2"
   if ! need_cmd "$cmd"; then
-    echo "缺少命令：$cmd"
+    echo "命令不存在：$cmd"
     echo "$hint"
     exit 1
   fi
@@ -94,18 +94,21 @@ init_docker_cmd() {
     return 0
   fi
 
-  echo "Docker daemon 当前不可用。"
-  echo "请先确认 Docker 已安装并启动，且当前用户可执行 'docker info'，或允许 sudo 执行 Docker。"
-  echo "常见排查："
-  echo "  - 启动服务：sudo systemctl start docker"
-  echo "  - 加入 docker 组后重新登录：sudo usermod -aG docker \$USER"
+  echo "Docker daemon 未运行"
+  echo "请检查 Docker 客户端是否已安装，需要 sudo 权限"
+  echo "请执行以下命令："
+  echo "  - sudo systemctl start docker"
+  echo "  - sudo usermod -aG docker \$USER"
   exit 1
 }
 
 ensure_compose_available() {
   if ! "${DOCKER_CMD[@]}" compose version >/dev/null 2>&1; then
-    echo "当前 Docker 缺少 'docker compose' 插件。"
-    echo "请按你的发行版安装 Docker Compose plugin 后重试。"
+    echo "Docker Compose 未安装"
+    echo "请检查 Docker 客户端是否已安装，需要 sudo 权限"
+    echo "请执行以下命令："
+    echo "  - sudo systemctl start docker"
+    echo "  - sudo usermod -aG docker \$USER"
     exit 1
   fi
 }
@@ -120,12 +123,12 @@ ensure_env_file() {
   fi
 
   if [[ ! -f "$example" ]]; then
-    echo "缺少 $env_file，且找不到模板文件 $example"
+    echo "文件不存在：$example"
     exit 1
   fi
 
   cp "$example" "$env_file"
-  echo "已创建默认配置：$env_file"
+  echo "已创建文件：$env_file"
 }
 
 read_env_value() {
@@ -184,7 +187,7 @@ collect_ip_candidates() {
 }
 
 suggest_runtime_public_base_url() {
-  local suggestion current_value current_domain selected_ip
+  local suggestion current_value current_domain current_runtime_manager_domain current_scheme selected_ip
   local -a ips=()
   local selected_idx
   local line
@@ -200,12 +203,17 @@ suggest_runtime_public_base_url() {
   suggestion="http://${ips[0]}"
   current_value="$(read_env_value "RUNTIME_PUBLIC_BASE_URL" || true)"
   current_domain="$(read_env_value "CLAWLOOPS_DOMAIN" || true)"
+  current_runtime_manager_domain="$(read_env_value "RUNTIME_MANAGER_DOMAIN" || true)"
+  current_scheme="$(read_env_value "RUNTIME_BROWSER_SCHEME" || true)"
 
   if [[ "$SET_PUBLIC_BASE_URL_MODE" == "auto-ip" ]]; then
-    upsert_env_value "CLAWLOOPS_DOMAIN" "${ips[0]}"
+    upsert_env_value "CLAWLOOPS_DOMAIN" "clawloops.${ips[0]}"
+    upsert_env_value "RUNTIME_MANAGER_DOMAIN" "runtime-manager.${ips[0]}"
+    upsert_env_value "RUNTIME_PUBLIC_HOST" "${ips[0]}"
+    upsert_env_value "RUNTIME_BROWSER_SCHEME" "http"
     upsert_env_value "RUNTIME_PUBLIC_BASE_URL" "$suggestion"
-    echo "已按 auto-ip 更新 CLAWLOOPS_DOMAIN=${ips[0]}"
-    echo "已按 auto-ip 更新 RUNTIME_PUBLIC_BASE_URL=$suggestion"
+    echo "已设置 CLAWLOOPS_DOMAIN=${ips[0]}"
+    echo "已设置 RUNTIME_PUBLIC_BASE_URL=$suggestion"
     return 0
   fi
 
@@ -213,35 +221,40 @@ suggest_runtime_public_base_url() {
     return 0
   fi
 
-  echo "检测到本机可用 IPv4（按推荐顺序）："
+  echo "请选择一个 IPv4 地址："
   for i in "${!ips[@]}"; do
     printf '  %d) %s\n' "$((i + 1))" "${ips[$i]}"
   done
-  echo "当前 CLAWLOOPS_DOMAIN=${current_domain:-<未设置>}"
-  echo "当前 RUNTIME_PUBLIC_BASE_URL=${current_value:-<未设置>}"
-  echo "建议值：$suggestion"
-  while true; do
-    echo "输入编号选择 IP（直接回车表示默认用 1 选项对应ip，选择后会同时更新主站入口和 Runtime 入口）："
+  echo "当前 CLAWLOOPS_DOMAIN=${current_domain:-<鏈缃?}"
+  echo "当前 RUNTIME_MANAGER_DOMAIN=${current_runtime_manager_domain:-<鏈缃?}"
+  echo "当前 RUNTIME_BROWSER_SCHEME=${current_scheme:-<鏈缃?}"
+  echo "当前 RUNTIME_PUBLIC_BASE_URL=${current_value:-<鏈缃?}"
+  echo "建议使用 $suggestion 作为 RUNTIME_PUBLIC_BASE_URL锛岄夋嫨鍚庝細鍚屾椂鏇存NEW鍏ュ彛鍜?Runtime 鍏ュ彛锛夛細"
     read -r selected_idx
     selected_idx="${selected_idx:-1}"
 
     if [[ "$selected_idx" == "0" ]]; then
-      echo "输入无效：不支持 0，请输入 1-${#ips[@]}。"
+      echo "请选择一个 IPv4 地址：1-${#ips[@]}"
       continue
     fi
 
     if ! [[ "$selected_idx" =~ ^[0-9]+$ ]] || (( selected_idx < 1 || selected_idx > ${#ips[@]} )); then
-      echo "输入无效：请输入 1-${#ips[@]}。"
+      echo "请选择一个 IPv4 地址：1-${#ips[@]}"   
       continue
     fi
     break
   done
 
   selected_ip="${ips[$((selected_idx - 1))]}"
-  upsert_env_value "CLAWLOOPS_DOMAIN" "${selected_ip}"
+  upsert_env_value "CLAWLOOPS_DOMAIN" "clawloops.${selected_ip}"
+  upsert_env_value "RUNTIME_MANAGER_DOMAIN" "runtime-manager.${selected_ip}"
+  upsert_env_value "RUNTIME_PUBLIC_HOST" "${selected_ip}"
+  upsert_env_value "RUNTIME_BROWSER_SCHEME" "http"
   upsert_env_value "RUNTIME_PUBLIC_BASE_URL" "http://${selected_ip}"
-  echo "已更新 CLAWLOOPS_DOMAIN=${selected_ip}"
-  echo "已更新 RUNTIME_PUBLIC_BASE_URL=http://${selected_ip}"
+  echo "已设置 CLAWLOOPS_DOMAIN=clawloops.${selected_ip}"
+  echo "已设置 RUNTIME_MANAGER_DOMAIN=runtime-manager.${selected_ip}"
+  echo "已设置 RUNTIME_PUBLIC_HOST=${selected_ip}"
+  echo "已设置 RUNTIME_PUBLIC_BASE_URL=http://${selected_ip}"
 }
 
 validate_env_file() {
@@ -257,22 +270,22 @@ validate_env_file() {
   for key in "${required_keys[@]}"; do
     value="$(read_env_value "$key" || true)"
     if [[ -z "$value" ]]; then
-      echo "配置缺失：$key"
-      echo "请编辑 $env_file 后重试。"
+      echo "请设置 $key"
+      echo "请在 $env_file"
       exit 1
     fi
   done
 }
 
 print_access_summary() {
-  local clawloops_domain runtime_public_base_url
+  local clawloops_domain runtime_manager_domain runtime_public_base_url
   clawloops_domain="$(read_env_value "CLAWLOOPS_DOMAIN")"
+  runtime_manager_domain="$(read_env_value "RUNTIME_MANAGER_DOMAIN")"
   runtime_public_base_url="$(read_env_value "RUNTIME_PUBLIC_BASE_URL")"
 
-  echo "启动完成。"
-  echo "主站：http://${clawloops_domain}"
-  echo "Runtime Manager：http://${clawloops_domain}/runtime-manager"
-  echo "OpenClaw Runtime 示例：${runtime_public_base_url}/runtime/<runtimeId>/chat?session=main#token=<OpenClaw token>"
+  echo "访问地址：http://${clawloops_domain}"
+  echo "Runtime Manager：http://${runtime_manager_domain}"
+  echo "OpenClaw Runtime 示例：http://${runtime_public_base_url}/runtime/<runtimeId>/chat?session=main#token=<OpenClaw token>"
   echo "Traefik Dashboard：http://127.0.0.1:8080"
 }
 
@@ -285,9 +298,9 @@ compose_up() {
 }
 
 main() {
-  require_cmd "grep" "请先安装基础文本工具（通常系统默认自带 grep）。"
-  require_cmd "awk" "请先安装 awk。"
-  require_cmd "docker" "请先安装 Docker Engine。"
+  require_cmd "grep" "请安装 grep"
+  require_cmd "awk" "请安装 awk"
+  require_cmd "docker" "请安装 Docker Engine"
 
   init_docker_cmd
   ensure_compose_available
@@ -300,7 +313,8 @@ main() {
 
 parse_args "$@"
 if [[ ! -f "$REPO_DIR/infra/compose/docker-compose.yml" ]]; then
-  echo "未找到 CrewClaw 仓库：$REPO_DIR"
+  echo "请在 CrewClaw 项目根目录下运行 $0"
+  echo "当前目录：$REPO_DIR"
   usage
   exit 1
 fi

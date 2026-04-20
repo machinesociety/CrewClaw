@@ -214,10 +214,9 @@ def get_runtime_service(
         from app.services.model_service import ModelService
 
         service = ModelService(model_repo=model_repo)
-        governed_models = service.filter_models_by_provider_readiness(
-            service.list_models_for_user(user_id),
-            settings.is_provider_ready,
-        )
+        # Governance is the single source of truth for model visibility in OpenClaw.
+        # Do not hide models based on provider readiness at render time.
+        governed_models = service.list_models_for_user(user_id)
         governed_models = service.prioritize_models(
             governed_models,
             settings.get_model_gateway_default_models(),

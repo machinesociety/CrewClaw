@@ -59,7 +59,8 @@ bash /path/to/CrewClaw/oneclick/start-crewclaw.sh /path/to/CrewClaw
 
 ## 启动后如何访问
 
-- 主站：`http://clawloops.<服务器IP>.nip.io`
+- 主站：`http://clawloops.<服务器IP>`
+- Runtime Manager：`http://runtime-manager.<服务器IP>`
 - Traefik Dashboard：`http://<服务器IP>:8080`
 
 ## 脚本执行逻辑
@@ -67,7 +68,7 @@ bash /path/to/CrewClaw/oneclick/start-crewclaw.sh /path/to/CrewClaw
 - 自动检测并安装 Docker + Docker Compose plugin（Ubuntu）
 - 自动启动 Docker 服务并校验可用
 - 自动识别服务器主 IP，并更新 `infra/compose/.env`
-- 尝试更新 `infra/traefik/dynamic/middlewares.yml` 中的旧 IP
+- 尝试更新 `infra/traefik/dynamic/middlewares.yml` 中的旧 IP 和旧域名
 - 执行 `docker compose up -d --build` 拉起服务
 
 ## 常见问题与排错
@@ -84,7 +85,7 @@ bash oneclick/start-crewclaw.sh /path/to/CrewClaw
 优先确认：
 
 - Traefik 是否在运行
-- `infra/compose/.env` 里的 `CLAWLOOPS_DOMAIN` 是否与你当前服务器 IP 一致
+- `infra/compose/.env` 里的 `CLAWLOOPS_DOMAIN` 和 `RUNTIME_MANAGER_DOMAIN` 是否与你当前服务器 IP 一致
 - `infra/traefik/dynamic/middlewares.yml` 内域名/IP 是否已被更新
 
 ### Runtime 启动失败：network not found

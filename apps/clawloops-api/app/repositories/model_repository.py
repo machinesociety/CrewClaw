@@ -83,6 +83,18 @@ def build_default_governed_models() -> list[Model]:
             default_provider_credential_id=None,
             upstream_model_id="openai/gpt-4o-mini",
         ),
+        Model(
+            model_id="glm-5",
+            name="GLM-5",
+            provider="litellm",
+            source=ModelSource.SHARED,
+            pricing_type=PricingType.PAID,
+            enabled=True,
+            user_visible=True,
+            default_route="litellm/glm-5",
+            default_provider_credential_id=None,
+            upstream_model_id="glm-5",
+        ),
     ]
 
 
@@ -108,12 +120,18 @@ class SqlAlchemyModelRepository:
         self._ensure_seed_data()
 
     def _ensure_seed_data(self) -> None:
-        existing_count = self._session.query(GovernedModelCatalogModel).count()
-        if existing_count > 0:
-            return
+        existing_model_ids = {
+            model_id
+            for (model_id,) in self._session.query(GovernedModelCatalogModel.model_id).all()
+        }
+        seeded = False
         for model in build_default_governed_models():
+            if model.model_id in existing_model_ids:
+                continue
             self._session.add(self._to_row(model))
-        self._session.commit()
+            seeded = True
+        if seeded:
+            self._session.commit()
 
     def list_models(self) -> list[Model]:
         rows = (
