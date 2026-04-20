@@ -236,6 +236,76 @@ README/                 项目 README 文档目录
 - [x] 浏览器访问地址和内部服务地址不会合并成一个通用 endpoint
 - [x] 真正的容器生命周期操作由 runtime-manager 执行
 
+## 模型网关与路由（当前行为）
+
+本节整合了以下文档中的已落地实现：
+- `docs/前端/普通用户默认模型与自带OpenRouterKey方案.md`
+- `docs/部署/LiteLLM_模型网关与多路由说明.md`
+
+### 1) 用户模型列表来源（`GET /api/v1/models`）
+
+控制面不会直接透传 LiteLLM `model_list`，而是按以下流程返回：
+
+1. 先读取平台治理层中 `enabled=true` 且 `userVisible=true` 的模型。
+2. 再按 provider 就绪状态过滤（如缺少 `DASHSCOPE_API_KEY` / `OPENROUTER_API_KEY`）。
+3. 再与 LiteLLM `GET /v1/models` 可用模型取交集。
+4. 返回模型元信息，包含 `pricingType`（`free`/`paid`）与 `defaultRoute`。
+
+### 2) 管理员治理与 OpenRouter 同步
+
+管理员模型治理接口：
+- `GET /api/v1/admin/models`
+- `PUT /api/v1/admin/models/{model_id}`
+- `POST /api/v1/admin/models/sync/openrouter`
+
+`/admin/models` 是模型上架/下架、可见性、价格类型与 OpenRouter 目录同步的主入口。
+
+### 3) 模型标识与 Runtime 执行路由
+
+当前有三层标识：
+
+1. 平台 `modelId`（治理与展示用）
+2. LiteLLM `model_name`（定义于 `infra/compose/litellm.config.yaml`）
+3. Runtime 执行路由 `defaultRoute`（下发给 OpenClaw）
+
+示例：
+- `ollama-qwen2.5-7b-free` 可映射到 `ollama/qwen2.5:7b`
+- `qwen-max-proxy` 继续通过 `litellm/qwen-max-proxy` 执行
+
+### 4) 网关与 Provider 关键配置
+
+核心环境变量（compose）：
+- `CLAWLOOPS_MODEL_GATEWAY_BASE_URL`（通常为 `http://litellm:4000`）
+- `CLAWLOOPS_MODEL_GATEWAY_DEFAULT_MODELS`（需与 LiteLLM `model_name` 对齐）
+- `DASHSCOPE_API_KEY`
+- `OPENROUTER_API_KEY`
+- `OLLAMA_BASE_URL`
+- `LITELLM_MASTER_KEY`
+
+核心文件：
+- `infra/compose/litellm.config.yaml`
+- `infra/compose/docker-compose.yml`
+- `infra/compose/README.md`
+
+### 5) 命名与价格语义
+
+当前命名约定：
+- `*-free`
+- `*-paid`
+
+示例：
+- `ollama-qwen2.5-7b-free`
+- `ollama-llama3.1-8b-free`
+- `openrouter-glm-4.5-air-free`
+
+### 6) 当前 OpenClaw 版本的已知行为
+
+在 OpenClaw `v2026.3.13` 下，聊天页模型下拉与会话持久化可能存在差异：
+- 模型目录可以正常显示
+- 会话级模型切换不一定总是持久化
+
+此时默认仍以 Runtime 下发的 `agents.defaults.model.primary` 为准，必要时可使用显式模型命令作为兜底。
+
 ## 🤝 参与贡献
 
 CrewClaw 的成长离不开社区的支持与共建！无论你是发现了一个 Bug、有绝妙的功能想法，还是想帮忙完善文档，我们都非常期待你的加入。
