@@ -218,6 +218,76 @@ Docker Engine 및 Docker Compose 플러그인이 설치되어 있어야 하며, 
 - [x] 브라우저용 주소와 내부 서비스 엔드포인트는 하나로 합치지 않음
 - [x] 실제 컨테이너 라이프사이클 조작은 runtime-manager가 수행
 
+## 모델 게이트웨이 및 라우팅 (현재 동작)
+
+이 섹션은 다음 문서의 현재 구현 내용을 통합합니다.
+- `docs/前端/普通用户默认模型与自带OpenRouterKey方案.md`
+- `docs/部署/LiteLLM_模型网关与多路由说明.md`
+
+### 1) 사용자 모델 목록 소스 (`GET /api/v1/models`)
+
+컨트롤 플레인은 LiteLLM `model_list`를 그대로 노출하지 않으며, 아래 파이프라인으로 목록을 만듭니다.
+
+1. 거버넌스 모델 중 `enabled=true` 및 `userVisible=true`만 선택
+2. provider 준비 상태로 필터링 (`DASHSCOPE_API_KEY` / `OPENROUTER_API_KEY` 등)
+3. LiteLLM `GET /v1/models` 결과와 교집합
+4. `pricingType` (`free`/`paid`), `defaultRoute` 포함 메타데이터 반환
+
+### 2) 관리자 거버넌스와 OpenRouter 동기화
+
+관리자 모델 API:
+- `GET /api/v1/admin/models`
+- `PUT /api/v1/admin/models/{model_id}`
+- `POST /api/v1/admin/models/sync/openrouter`
+
+`/admin/models`는 모델 온/오프, 노출 여부, 과금 유형, OpenRouter 카탈로그 동기화의 중심 화면입니다.
+
+### 3) 모델 식별자와 Runtime 실행 라우트
+
+현재 식별자는 세 층으로 구분됩니다.
+
+1. 플랫폼 `modelId` (거버넌스/UI 식별자)
+2. LiteLLM `model_name` (`infra/compose/litellm.config.yaml`)
+3. Runtime 실행 라우트 `defaultRoute` (OpenClaw 전달)
+
+예시:
+- `ollama-qwen2.5-7b-free` -> `ollama/qwen2.5:7b`
+- `qwen-max-proxy` -> `litellm/qwen-max-proxy`
+
+### 4) 게이트웨이 및 Provider 핵심 설정
+
+핵심 환경 변수:
+- `CLAWLOOPS_MODEL_GATEWAY_BASE_URL` (일반적으로 `http://litellm:4000`)
+- `CLAWLOOPS_MODEL_GATEWAY_DEFAULT_MODELS` (LiteLLM `model_name`과 일치 필요)
+- `DASHSCOPE_API_KEY`
+- `OPENROUTER_API_KEY`
+- `OLLAMA_BASE_URL`
+- `LITELLM_MASTER_KEY`
+
+핵심 파일:
+- `infra/compose/litellm.config.yaml`
+- `infra/compose/docker-compose.yml`
+- `infra/compose/README.md`
+
+### 5) 네이밍 및 가격 유형 규칙
+
+현재 네이밍 규칙:
+- `*-free`
+- `*-paid`
+
+예시:
+- `ollama-qwen2.5-7b-free`
+- `ollama-llama3.1-8b-free`
+- `openrouter-glm-4.5-air-free`
+
+### 6) 현재 OpenClaw 버전의 알려진 동작
+
+OpenClaw `v2026.3.13`에서는 모델 드롭다운 표시와 세션 단위 유지 동작이 다를 수 있습니다.
+- 모델 목록은 정상 표시 가능
+- 세션 오버라이드 저장은 항상 보장되지 않을 수 있음
+
+이 경우 실제 기본 모델은 `agents.defaults.model.primary`를 따르며, 필요하면 명시적 모델 명령 사용을 권장합니다.
+
 ## 🤝 기여하기
 
 버그 제보, 기능 제안, 문서 개선 등 다양한 방식의 기여를 환영합니다.
