@@ -5,8 +5,6 @@ services:
     image: traefik:v3.2.3
     container_name: crewclaw-traefik
     restart: unless-stopped
-    environment:
-      - DOCKER_API_VERSION=1.44
     command:
       - --configFile=/etc/traefik/traefik.yml
     ports:
