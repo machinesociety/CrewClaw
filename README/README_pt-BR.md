@@ -218,6 +218,77 @@ Garanta que o Docker Engine e o plugin Docker Compose estejam instalados e tenha
 - [x] Endereço voltado ao navegador e endpoint interno não são unificados em um único endpoint genérico
 - [x] O ciclo de vida real do contêiner é executado pelo runtime-manager
 
+## Gateway de modelos e roteamento (comportamento atual)
+
+Esta seção consolida o comportamento atualmente implementado com base em:
+- `docs/前端/普通用户默认模型与自带OpenRouterKey方案.md`
+- `docs/部署/LiteLLM_模型网关与多路由说明.md`
+
+### 1) Origem da lista de modelos do usuário (`GET /api/v1/models`)
+
+O control plane não expõe diretamente o `model_list` do LiteLLM.  
+A lista é montada com este fluxo:
+
+1. Lê os modelos de governança com `enabled=true` e `userVisible=true`.
+2. Filtra por prontidão do provider (ex.: `DASHSCOPE_API_KEY` / `OPENROUTER_API_KEY`).
+3. Faz interseção com os modelos disponíveis no LiteLLM (`GET /v1/models`).
+4. Retorna metadados com `pricingType` (`free`/`paid`) e `defaultRoute`.
+
+### 2) Governança admin e sincronização OpenRouter
+
+APIs administrativas de modelos:
+- `GET /api/v1/admin/models`
+- `PUT /api/v1/admin/models/{model_id}`
+- `POST /api/v1/admin/models/sync/openrouter`
+
+`/admin/models` é a tela principal para habilitar/desabilitar, visibilidade, tipo de preço e sincronização de catálogo OpenRouter.
+
+### 3) Identidade do modelo vs rota de execução no Runtime
+
+Atualmente existem três camadas:
+
+1. `modelId` da plataforma (governança/UI)
+2. `model_name` do LiteLLM (`infra/compose/litellm.config.yaml`)
+3. `defaultRoute` de execução no Runtime (enviado ao OpenClaw)
+
+Exemplo:
+- `ollama-qwen2.5-7b-free` pode mapear para `ollama/qwen2.5:7b`.
+- `qwen-max-proxy` continua via `litellm/qwen-max-proxy`.
+
+### 4) Configuração principal de gateway e providers
+
+Variáveis-chave:
+- `CLAWLOOPS_MODEL_GATEWAY_BASE_URL` (normalmente `http://litellm:4000`)
+- `CLAWLOOPS_MODEL_GATEWAY_DEFAULT_MODELS` (deve bater com `model_name` no LiteLLM)
+- `DASHSCOPE_API_KEY`
+- `OPENROUTER_API_KEY`
+- `OLLAMA_BASE_URL`
+- `LITELLM_MASTER_KEY`
+
+Arquivos-chave:
+- `infra/compose/litellm.config.yaml`
+- `infra/compose/docker-compose.yml`
+- `infra/compose/README.md`
+
+### 5) Convenção de nomenclatura e semântica de preço
+
+Convenção atual:
+- `*-free`
+- `*-paid`
+
+Exemplos:
+- `ollama-qwen2.5-7b-free`
+- `ollama-llama3.1-8b-free`
+- `openrouter-glm-4.5-air-free`
+
+### 6) Comportamento conhecido na versão atual do OpenClaw
+
+No OpenClaw `v2026.3.13`, a exibição do dropdown de modelos e a persistência por sessão podem variar:
+- a lista de modelos pode aparecer corretamente
+- a troca de modelo pode não persistir sempre como override da sessão
+
+Nesses casos, o modelo principal segue o valor renderizado pelo Runtime (`agents.defaults.model.primary`), e comandos explícitos de modelo são um fallback confiável.
+
 ## 🤝 Contribuindo
 
 O CrewClaw cresce com apoio da comunidade. Se você encontrou um bug, tem uma ideia de funcionalidade ou quer melhorar a documentação, sua contribuição é bem-vinda.
