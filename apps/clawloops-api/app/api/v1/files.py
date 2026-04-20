@@ -118,6 +118,13 @@ async def upload_file(
         if binding.observedState != "running":
             raise HTTPException(status_code=400, detail="No container available")
         
+        # 检查是否存在同名文件
+        directory = "/".join(path.split("/")[:-1]) if "/" in path else "/"
+        files = runtime_service.list_files(binding.runtimeId, directory)
+        filename = path.split("/")[-1]
+        if any(f.get("name") == filename for f in files):
+            raise HTTPException(status_code=409, detail="File already exists")
+        
         content = await file.read()
         runtime_service.write_file(binding.runtimeId, path, content)
         return {"success": True}
