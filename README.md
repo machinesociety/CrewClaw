@@ -216,6 +216,84 @@ Please ensure Docker Engine and Docker Compose are installed on your system, and
 - [x] Browser-facing addresses and internal service addresses are not collapsed into a single endpoint
 - [x] Runtime-manager is the service that performs actual container lifecycle operations
 
+## Model Gateway and Routing (Current Behavior)
+
+This section consolidates the current implementation from:
+- `docs/前端/普通用户默认模型与自带OpenRouterKey方案.md`
+- `docs/部署/LiteLLM_模型网关与多路由说明.md`
+
+### 1) User-facing model list source (`GET /api/v1/models`)
+
+The control plane does not expose LiteLLM `model_list` directly.  
+The returned list is built with this pipeline:
+
+1. Read governed models (`enabled=true` and `userVisible=true`).
+2. Filter by provider readiness (for example, missing `DASHSCOPE_API_KEY` or `OPENROUTER_API_KEY`).
+3. Intersect with LiteLLM available models (`GET /v1/models`).
+4. Return model metadata including `pricingType` (`free`/`paid`) and `defaultRoute`.
+
+### 2) Admin governance and OpenRouter sync
+
+Admin model governance is exposed via:
+- `GET /api/v1/admin/models`
+- `PUT /api/v1/admin/models/{model_id}`
+- `POST /api/v1/admin/models/sync/openrouter`
+
+`/admin/models` is the primary UI for enabling/disabling models, visibility, pricing type, and syncing OpenRouter catalog entries.
+
+### 3) Model identity vs runtime route
+
+There are three related but different identifiers:
+
+1. Platform `modelId` (governance ID, used by control plane and UI)
+2. LiteLLM `model_name` (registered in `infra/compose/litellm.config.yaml`)
+3. Runtime execution route (`defaultRoute`, consumed by OpenClaw)
+
+Example:
+- `ollama-qwen2.5-7b-free` can map to runtime route `ollama/qwen2.5:7b`.
+- `qwen-max-proxy` continues to execute via `litellm/qwen-max-proxy`.
+
+This allows local Ollama models to run through native Ollama routing when needed, instead of forcing every route through LiteLLM OpenAI-compatible forwarding.
+
+### 4) Provider and gateway configuration
+
+Core env vars (compose deployment):
+- `CLAWLOOPS_MODEL_GATEWAY_BASE_URL` (usually `http://litellm:4000`)
+- `CLAWLOOPS_MODEL_GATEWAY_DEFAULT_MODELS` (must match `model_name` values in LiteLLM config)
+- `DASHSCOPE_API_KEY`
+- `OPENROUTER_API_KEY`
+- `OLLAMA_BASE_URL`
+- `LITELLM_MASTER_KEY`
+
+Core files:
+- `infra/compose/litellm.config.yaml` (LiteLLM model registration and provider mapping)
+- `infra/compose/docker-compose.yml` (service wiring and env injection)
+- `infra/compose/README.md` (operator steps and deployment examples)
+
+### 5) Naming convention and pricing semantics
+
+Current naming convention uses suffixes for pricing semantics:
+- `*-free`
+- `*-paid`
+
+Common examples:
+- `ollama-qwen2.5-7b-free`
+- `ollama-llama3.1-8b-free`
+- `openrouter-glm-4.5-air-free`
+
+### 6) Known behavior in current OpenClaw build
+
+With current OpenClaw `v2026.3.13`, model dropdown display and per-session persistence can differ by client behavior:
+- model list can be displayed correctly
+- a model switch may not always persist as session override
+
+When this happens, runtime primary model still follows server-rendered defaults (`agents.defaults.model.primary`), and explicit model commands remain a reliable fallback path.
+
+### 7) Reference docs
+
+- `docs/部署/LiteLLM_模型网关与多路由说明.md`
+- `docs/前端/普通用户默认模型与自带OpenRouterKey方案.md`
+
 ## 🤝 Contributing
 
 ClawLoops grows with community support and co-building. Whether you found a bug, have a great feature idea, or want to improve the docs, you are welcome to join.
