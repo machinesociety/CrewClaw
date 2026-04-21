@@ -17,7 +17,7 @@ build-windows:
   tags:
     - windows
   script:
-    - .\oneclick\start-crewclaw1.ps1
+    - .\oneclick\start-crewclaw1.bat
   only:
     - develop 
 
