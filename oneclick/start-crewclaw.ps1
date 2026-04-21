@@ -108,44 +108,10 @@ function Ensure-RuntimeManagerUserFilesMount {
 Sync-UserFilesPathEnv
 Ensure-RuntimeManagerUserFilesMount
 
-# 询问用户是否更新OpenClaw镜像
-Write-Host "是否需要更新OpenClaw镜像？(Y/N):" -ForegroundColor Cyan
-$updateChoice = Read-Host
-
-# 验证用户输入
-while ($updateChoice -notmatch '^[YNyn]$') {
-    Write-Host "请输入 Y 或 N:" -ForegroundColor Yellow
-    $updateChoice = Read-Host
-}
-
 # ----------------------------
 # 3. 下载工作台镜像
 # ----------------------------
 $finalTag = "ghcr.io/openclaw/openclaw:latest"
-
-# 直接启动Docker服务（不更新镜像）
-function Start-DockerServices {
-    Write-Host "直接启动Docker服务，使用现有镜像..." -ForegroundColor Cyan
-    
-    try {
-        # 切换到compose目录
-        $composeDir = "infra\compose"
-        Set-Location $composeDir
-        
-        # 构建并启动容器
-        Write-Host "构建并启动容器..." -ForegroundColor Cyan
-        & docker compose up -d --build
-        
-        # 切换回项目根目录
-        Set-Location ..\..
-        
-        Write-Host "Docker服务启动成功，使用的是现有版本的镜像" -ForegroundColor Green
-    } catch {
-        Write-Host "启动Docker服务时出错: $($_.Exception.Message)" -ForegroundColor Red
-        # 确保切换回项目根目录
-        Set-Location ..\.. -ErrorAction SilentlyContinue
-    }
-}
 
 # 获取最新版本的openclaw镜像的digest
 function Get-LatestOpenClawDigest {
@@ -248,54 +214,52 @@ function Rebuild-DockerServices {
     }
 }
 
-# 根据用户选择执行不同操作
-if ($updateChoice -match '^[Yy]$') {
-    # 用户选择更新
-    # 获取最新版本的镜像digest
-    $imageDigest = Get-LatestOpenClawDigest
+# 直接拉取最新镜像并构建服务
+# 获取最新版本的镜像digest
+$imageDigest = Get-LatestOpenClawDigest
 
-    # 定义尝试次数
-    $maxAttempts = 4
+# 定义尝试次数
+$maxAttempts = 4
 
-    # 尝试使用原始源下载
-    $downloadSuccess = $false
-    Write-Host "尝试使用原始源下载..." -ForegroundColor Cyan
+# 尝试使用原始源下载
+$downloadSuccess = $false
+Write-Host "尝试使用原始源下载..." -ForegroundColor Cyan
 
-    for ($i = 1; $i -le $maxAttempts; $i++) {
-        Write-Host "尝试次数: $i/$maxAttempts" -ForegroundColor Cyan
-        $startTime = Get-Date
-        Write-Host "开始时间: $startTime" -ForegroundColor Cyan
-        
-        # 直接执行docker pull命令
-        & docker pull ghcr.io/openclaw/openclaw:latest 2>&1
-        
-        # 检查命令执行结果
-        if ($LASTEXITCODE -eq 0) {
-            $endTime = Get-Date
-            $elapsedTime = $endTime - $startTime
-            Write-Host "结束时间: $endTime" -ForegroundColor Cyan
-            Write-Host "实际用时: $($elapsedTime.TotalMinutes.ToString('0.00')) 分钟" -ForegroundColor Cyan
-            Write-Host "镜像下载成功" -ForegroundColor Green
-            $downloadSuccess = $true
-            break
-        } else {
-            $endTime = Get-Date
-            $elapsedTime = $endTime - $startTime
-            Write-Host "结束时间: $endTime" -ForegroundColor Cyan
-            Write-Host "实际用时: $($elapsedTime.TotalMinutes.ToString('0.00')) 分钟" -ForegroundColor Cyan
-            Write-Host "镜像下载失败，准备重试..." -ForegroundColor Yellow
-        }
+for ($i = 1; $i -le $maxAttempts; $i++) {
+    Write-Host "尝试次数: $i/$maxAttempts" -ForegroundColor Cyan
+    $startTime = Get-Date
+    Write-Host "开始时间: $startTime" -ForegroundColor Cyan
+    
+    # 直接执行docker pull命令
+    & docker pull ghcr.io/openclaw/openclaw:latest 2>&1
+    
+    # 检查命令执行结果
+    if ($LASTEXITCODE -eq 0) {
+        $endTime = Get-Date
+        $elapsedTime = $endTime - $startTime
+        Write-Host "结束时间: $endTime" -ForegroundColor Cyan
+        Write-Host "实际用时: $($elapsedTime.TotalMinutes.ToString('0.00')) 分钟" -ForegroundColor Cyan
+        Write-Host "镜像下载成功" -ForegroundColor Green
+        $downloadSuccess = $true
+        break
+    } else {
+        $endTime = Get-Date
+        $elapsedTime = $endTime - $startTime
+        Write-Host "结束时间: $endTime" -ForegroundColor Cyan
+        Write-Host "实际用时: $($elapsedTime.TotalMinutes.ToString('0.00')) 分钟" -ForegroundColor Cyan
+        Write-Host "镜像下载失败，准备重试..." -ForegroundColor Yellow
     }
+}
 
-    # 如果所有镜像源都失败
-    if (-not $downloadSuccess) {
-        Write-Host "镜像下载失败，退出脚本" -ForegroundColor Red
-        Write-Host "请在 Docker Desktop 的设置中修改 Docker Engine 配置：" -ForegroundColor Yellow
-        Write-Host "1. 打开 Docker Desktop"
-        Write-Host "2. 点击 Settings"
-        Write-Host "3. 点击 Docker Engine"
-        Write-Host "4. 将配置修改为：" -ForegroundColor Yellow
-        Write-Host '{
+# 如果所有镜像源都失败
+if (-not $downloadSuccess) {
+    Write-Host "镜像下载失败，退出脚本" -ForegroundColor Red
+    Write-Host "请在 Docker Desktop 的设置中修改 Docker Engine 配置：" -ForegroundColor Yellow
+    Write-Host "1. 打开 Docker Desktop"
+    Write-Host "2. 点击 Settings"
+    Write-Host "3. 点击 Docker Engine"
+    Write-Host "4. 将配置修改为：" -ForegroundColor Yellow
+    Write-Host '{
   "builder": {
     "gc": {
       "defaultKeepStorage": "20GB",
@@ -307,18 +271,14 @@ if ($updateChoice -match '^[Yy]$') {
     "https://docker.m.daocloud.io"
   ]
 }' -ForegroundColor Yellow
-        Write-Host "5. 点击 Apply & Restart" -ForegroundColor Yellow
-        exit 1
-    } else {
-        # 更新文件中的镜像digest
-        Update-ImageDigest -digest $imageDigest
-        
-        # 重新构建docker服务
-        Rebuild-DockerServices
-    }
+    Write-Host "5. 点击 Apply & Restart" -ForegroundColor Yellow
+    exit 1
 } else {
-    # 用户选择不更新，直接启动服务
-    Start-DockerServices
+    # 更新文件中的镜像digest
+    Update-ImageDigest -digest $imageDigest
+    
+    # 重新构建docker服务
+    Rebuild-DockerServices
 }
 
 
