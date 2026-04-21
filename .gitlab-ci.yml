@@ -27,7 +27,6 @@ notice:
   tags: 
     - develop
   script:
-    - echo $FEISHU_WEBHOOK
     - chmod +x ./scripts/notice.sh
     - ./scripts/notice.sh
   when: always
