@@ -205,7 +205,8 @@ RUNTIME_MANAGER_PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 搭建VPN连接，确保服务器与公网的网络连接稳定 或者 多点几次！！！
 
 <br />
-六、当出现下载超时，需要执行
+
+### 六、当出现下载超时，需要执行
 
 1、重新加载系统的管理配置
 
@@ -231,4 +232,17 @@ docker info | grep -A 5 "Registry Mirrors"
 
 - 你必须在 `infra/compose/.env` 里填好 `DASHSCOPE_API_KEY`，否则 LiteLLM 调用 DashScope 会返回 500。
 - 不要把真实 API Key（例如 DashScope/OpenAI/Anthropic）提交到仓库；建议只在部署机的 `.env` 里配置，并限制文件权限。
+
+### 七、如果想要重起服务，需要在infra/compose文件下
+
+### 基础清理
+docker compose down
+
+或者
+
+### 先清本项目
+docker compose down --remove-orphans --volumes --rmi all
+
+### 清 BuildKit/构建缓存
+docker builder prune -af
 
