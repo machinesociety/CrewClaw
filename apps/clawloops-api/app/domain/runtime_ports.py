@@ -82,6 +82,9 @@ class RuntimeManagerPort(Protocol):
     ) -> dict:
         ...
 
+    def restart(self, runtime_id: str) -> dict:
+        ...
+
     def list_files(self, runtime_id: str, path: str) -> list[dict]:
         ...
 

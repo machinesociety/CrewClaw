@@ -382,6 +382,45 @@ class RuntimeExecutor:
         except (APIError, NotFound) as exc:
             raise RuntimeManagerError("RUNTIME_STOP_FAILED", "failed to stop container", 500) from exc
 
+    def restart(self, runtime_id: str) -> ContainerStateResponse:
+        try:
+            container = self._get_single_container(runtime_id)
+            if container is None:
+                raise RuntimeManagerError(
+                    "CONTAINER_NOT_FOUND",
+                    f"container not found for runtimeId: {runtime_id}",
+                    404,
+                )
+            container.restart(timeout=10)
+            ip = (
+                container.attrs.get("NetworkSettings", {})
+                .get("Networks", {})
+                .get(self._settings.runtime_openclaw_network, {})
+                .get("IPAddress", "")
+            )
+            if not ip or not self._wait_ready(ip, 18789):
+                raise RuntimeManagerError(
+                    "RUNTIME_START_FAILED",
+                    "runtime restarted but not ready",
+                    500,
+                )
+            browser_url = self._browser_url_from_route_path_prefix(self._route_path_prefix_from_container(container))
+            return ContainerStateResponse(
+                runtimeId=runtime_id,
+                observedState="running",
+                internalEndpoint=self._internal_endpoint(runtime_id),
+                browserUrl=browser_url,
+                message="restarted",
+            )
+        except RuntimeManagerError:
+            raise
+        except (APIError, OSError, ValueError) as exc:
+            raise RuntimeManagerError(
+                "RUNTIME_START_FAILED",
+                f"failed to restart container: {str(exc)}",
+                500,
+            ) from exc
+
     def delete(self, req: DeleteContainerRequest) -> ContainerStateResponse:
         try:
             container = self._get_single_container(req.runtimeId)

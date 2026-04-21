@@ -50,6 +50,10 @@ class DeleteContainerRequest(BaseModel):
     compat: CompatConfig | None = None
 
 
+class RestartContainerRequest(BaseModel):
+    runtimeId: str
+
+
 class ContainerStateResponse(BaseModel):
     runtimeId: str
     observedState: ObservedState

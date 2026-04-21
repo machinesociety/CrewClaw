@@ -10,6 +10,7 @@ from app.schemas.contracts import (
     DeleteContainerRequest,
     EnsureContainerRequest,
     ErrorResponse,
+    RestartContainerRequest,
     StopContainerRequest,
 )
 from app.services.runtime_executor import RuntimeExecutor
@@ -113,6 +114,19 @@ def delete_container(body: DeleteContainerRequest) -> ContainerStateResponse:
     executor = RuntimeExecutor(get_settings())
     try:
         return executor.delete(body)
+    except RuntimeManagerError as err:
+        _raise_http(err)
+
+
+@router.post(
+    "/containers/restart",
+    response_model=ContainerStateResponse,
+    responses={404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def restart_container(body: RestartContainerRequest) -> ContainerStateResponse:
+    executor = RuntimeExecutor(get_settings())
+    try:
+        return executor.restart(body.runtimeId)
     except RuntimeManagerError as err:
         _raise_http(err)
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Optional
 
@@ -228,6 +229,43 @@ class RuntimeService:
         """
         return self._binding_service.ensure_binding(user_id)
 
+    def hot_reload_openclaw_config(self, user_id: str) -> bool:
+        """
+        不重启 Runtime，直接将最新模型配置热写入运行中容器的 openclaw.json。
+        成功返回 True，失败或容器未运行返回 False。
+        """
+        binding = self._binding_service.ensure_binding(user_id)
+        if binding.observedState != ObservedState.running:
+            return False
+
+        model_config = self._model_config_service.get_user_model_config(user_id)
+        openclaw_json, _ = self._config_renderer.render(user_id, binding, model_config)
+        try:
+            self._runtime_manager.write_file(
+                runtime_id=binding.runtimeId,
+                path="/home/node/.openclaw/openclaw.json",
+                content=json.dumps(openclaw_json, ensure_ascii=False, indent=2),
+            )
+            # OpenClaw runtime reads config from workspace mount fallback path as well.
+            self._runtime_manager.write_file(
+                runtime_id=binding.runtimeId,
+                path="/home/node/.openclaw/workspace/openclaw.json",
+                content=json.dumps(openclaw_json, ensure_ascii=False, indent=2),
+            )
+            return True
+        except Exception:
+            return False
+
+    def restart_runtime(self, user_id: str) -> bool:
+        binding = self._binding_service.ensure_binding(user_id)
+        if binding.observedState != ObservedState.running:
+            return False
+        try:
+            self._runtime_manager.restart(binding.runtimeId)
+            return True
+        except Exception:
+            return False
+
     def list_files(self, runtime_id: str, path: str) -> list[dict]:
         """
         列出容器内的文件
@@ -331,6 +369,9 @@ class RuntimeManagerPortAdapter(RuntimeManagerPort):
             retention_policy=retention_policy,
             compat=compat,
         )
+
+    def restart(self, runtime_id: str) -> dict:
+        return self._client.restart(runtime_id=runtime_id)
 
     def list_files(self, runtime_id: str, path: str) -> list[dict]:
         return self._client.list_files(runtime_id=runtime_id, path=path)

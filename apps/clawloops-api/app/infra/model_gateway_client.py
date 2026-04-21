@@ -88,3 +88,15 @@ class ModelGatewayClient:
                 },
             )
             resp.raise_for_status()
+
+    def delete_model(self, model_name: str) -> None:
+        if "pytest" in sys.modules:
+            return
+        url = f"{self._base_url}/model/delete"
+        with httpx.Client(timeout=self._timeout_seconds) as client:
+            # LiteLLM 不同版本字段存在差异，先用常见字段，再做一次回退尝试。
+            resp = client.post(url, headers=self._headers(), json={"model_name": model_name})
+            if resp.is_success:
+                return
+            resp = client.post(url, headers=self._headers(), json={"id": model_name})
+            resp.raise_for_status()

@@ -97,6 +97,13 @@ class RuntimeManagerClient:
             payload,
         )
 
+    def restart(self, runtime_id: str) -> Any:
+        return self._request(
+            "POST",
+            "/internal/runtime-manager/containers/restart",
+            {"runtimeId": runtime_id},
+        )
+
     def get_container(self, runtime_id: str) -> dict[str, Any]:
         return self._request("GET", f"/internal/runtime-manager/containers/{runtime_id}")
 
@@ -126,6 +133,12 @@ class RuntimeManagerClient:
             "content": content,
             "isBinary": is_binary
         })
+
+    def write_runtime_openclaw_config(self, runtime_id: str, openclaw_json: dict[str, Any]) -> None:
+        import json
+
+        payload = json.dumps(openclaw_json, ensure_ascii=False, indent=2)
+        self.write_file(runtime_id=runtime_id, path="/home/node/.openclaw/openclaw.json", content=payload)
 
     def list_skills(self, scope: str, user_id: str | None = None) -> list[dict[str, Any]]:
         query = f"/internal/runtime-manager/skills/list?scope={scope}"

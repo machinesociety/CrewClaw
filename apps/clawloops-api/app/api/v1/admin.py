@@ -16,7 +16,7 @@ from app.core.dependencies import (
     get_user_service,
     require_active_user,
 )
-from app.core.errors import AccessDeniedError, InvitationNotFoundError, UserNotFoundError
+from app.core.errors import AccessDeniedError, InvitationNotFoundError, ModelNotFoundError, UserNotFoundError
 from app.domain.models import PricingType
 from app.domain.users import UserStatus
 from app.infra.model_gateway_client import ModelGatewayClient
@@ -396,10 +396,15 @@ async def update_admin_model(
     body: UpdateAdminModelRequest,
     ctx: AuthContext = Depends(_require_admin),
     service: ModelService = Depends(get_model_service),
+    model_repo: ModelRepository = Depends(get_model_repository),
     settings=Depends(get_app_settings),
     runtime_service: RuntimeService = Depends(get_runtime_service),
     user_service: UserService = Depends(get_user_service),
 ) -> AdminModelItem:
+    before = model_repo.get_model(model_id)
+    if before is None:
+        raise ModelNotFoundError()
+
     model = service.update_model(
         model_id,
         enabled=body.enabled,
@@ -427,15 +432,36 @@ async def update_admin_model(
                     "api_key": "os.environ/OPENROUTER_API_KEY",
                 },
             )
+    # 下架（禁用或不可见）后，同步从 LiteLLM 目录移除，确保工作区刷新后不再显示。
+    is_down = (body.enabled is False or body.userVisible is False)
+    if is_down and model.provider in {"openrouter", "litellm", "ollama"}:
+        try:
+            client = ModelGatewayClient(
+                settings.model_gateway_base_url or "http://litellm:4000",
+                api_key=settings.litellm_api_key,
+                timeout_seconds=10.0,
+            )
+            client.delete_model(model.model_id)
+        except Exception:
+            # 某些版本或静态配置模型可能不支持删除，忽略异常并保持平台状态一致。
+            pass
+
+    visibility_changed = (before.enabled != model.enabled) or (before.user_visible != model.user_visible)
     runtime_refresh_triggered = False
     runtime_browser_url: str | None = None
-    # If the current admin already has a workspace binding, refresh its runtime
-    # so OpenClaw can pick up newly enabled/visible model routes immediately.
-    if user_service.get_runtime_binding(ctx.userId) is not None:
-        runtime_service.ensure_running(ctx.userId)
-        runtime_refresh_triggered = True
-        binding = user_service.get_runtime_binding(ctx.userId)
-        runtime_browser_url = binding.browser_url if binding is not None else None
+    # 模型上下架后，自动同步到已启动工作区：
+    # - 先热写入 openclaw.json
+    # - 再重启容器（不删容器/不改路由），确保 OpenClaw 重新加载模型列表
+    if visibility_changed:
+        for u in user_service.list_users():
+            binding = user_service.get_runtime_binding(u.user_id)
+            if binding is None or binding.observed_state.value.lower() != "running":
+                continue
+            runtime_service.hot_reload_openclaw_config(u.user_id)
+            runtime_service.restart_runtime(u.user_id)
+            runtime_refresh_triggered = True
+            if u.user_id == ctx.userId:
+                runtime_browser_url = binding.browser_url
     return AdminModelItem(
         modelId=model.model_id,
         name=model.name,

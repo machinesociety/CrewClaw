@@ -248,7 +248,11 @@ def get_runtime_service(
             if m.model_id in resolved_model_ids
         }
         if isinstance(payload, dict):
-            payload = {**payload, "modelPricing": model_pricing, "modelRoutes": model_routes}
+            payload = {
+                **payload,
+                "modelPricing": model_pricing,
+                "modelRoutes": model_routes,
+            }
         return ModelConfigResponse(**payload)
 
     binding_port = UserRuntimeBindingServiceAdapter(
