@@ -221,6 +221,10 @@ function UsersListContent() {
                               toast.error('无法禁用主管理员账号');
                               return;
                             }
+                            if (user.status === 'active' && user.role === 'admin') {
+                              toast.error('无法禁用其他管理员账号');
+                              return;
+                            }
                             setConfirmDialog({
                               open: true,
                               userId: user.userId,
