@@ -10,16 +10,17 @@ build-ubuntu:
     - chmod +x ./oneclick/start-crewclaw.sh
     - ./oneclick/start-crewclaw.sh
   only:
-    - develop 
+    - develop
 
 build-windows:
   stage: build
   tags:
     - windows
   script:
-    - .\oneclick\start-crewclaw1.bat
+    - .\oneclick\start-crewclaw.ps1
   only:
-    - develop 
+    - wh1
+    - develop
 
 
 notice:
@@ -27,10 +28,10 @@ notice:
   tags: 
     - develop
   script:
-    - echo $FEISHU_WEBHOOK
     - chmod +x ./scripts/notice.sh
     - ./scripts/notice.sh
   when: always
   allow_failure: true
   only:
+    - wh1
     - develop
