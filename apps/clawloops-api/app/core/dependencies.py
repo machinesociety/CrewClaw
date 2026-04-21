@@ -8,6 +8,7 @@ from app.core.settings import AppSettings, get_settings
 from app.infra.runtime_manager_client import RuntimeManagerClient
 from app.repositories.session_repository import SqlAlchemySessionRepository, SessionRepository
 from app.repositories.invitation_repository import InvitationRepository, SqlAlchemyInvitationRepository
+from app.repositories.model_repository import ModelRepository, SqlAlchemyModelRepository
 from app.repositories.user_repository import (
     InMemoryUserRepository,
     SqlAlchemyUserRepository,
@@ -24,6 +25,7 @@ from app.services.runtime_service import (
     UserRuntimeBindingServiceAdapter,
 )
 from app.services.user_service import UserService
+from app.services.user_file_service import UserFileService, FileStorageManager
 
 
 _user_repo_singleton: UserRepository | None = None
@@ -83,6 +85,12 @@ def get_invitation_repository(
     return SqlAlchemyInvitationRepository(db)
 
 
+def get_model_repository(
+    db: Session = Depends(get_db_session_dep),
+) -> ModelRepository:
+    return SqlAlchemyModelRepository(db)
+
+
 def get_auth_context(
     request: Request,
     settings: AppSettings = Depends(get_app_settings),
@@ -112,6 +120,13 @@ def require_active_user(ctx: AuthContext = Depends(get_auth_context)) -> AuthCon
     return ctx
 
 
+def require_admin_user(ctx: AuthContext = Depends(require_active_user)) -> AuthContext:
+    if not ctx.isAdmin:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return ctx
+
+
 def get_user_service(
     user_repo: UserRepository = Depends(get_sqlalchemy_user_repository),
     binding_repo: UserRuntimeBindingRepository = Depends(get_runtime_binding_repository),
@@ -136,6 +151,7 @@ def get_runtime_service(
     user_service: UserService = Depends(get_user_service),
     settings: AppSettings = Depends(get_app_settings),
     task_repo: InMemoryRuntimeTaskRepository = Depends(get_runtime_task_repository),
+    model_repo: ModelRepository = Depends(get_model_repository),
 ) -> RuntimeService:
     """
     组装 RuntimeService 所需依赖。
@@ -193,12 +209,49 @@ def get_runtime_service(
 
     def get_model_config(user_id: str) -> ModelConfigResponse:
         model_base_url = settings.model_gateway_base_url or "http://litellm:4000"
-        preferred_models = settings.get_model_gateway_default_models()
-
+        from app.domain.models import PricingType
         from app.infra.model_gateway_client import ModelGatewayClient
+        from app.services.model_service import ModelService
 
-        client = ModelGatewayClient(model_base_url)
+        service = ModelService(model_repo=model_repo)
+        # Governance is the single source of truth for model visibility in OpenClaw.
+        # Do not hide models based on provider readiness at render time.
+        governed_models = service.list_models_for_user(user_id)
+        governed_models = service.prioritize_models(
+            governed_models,
+            settings.get_model_gateway_default_models(),
+        )
+        preferred_models = [m.model_id for m in governed_models]
+
+        client = ModelGatewayClient(model_base_url, api_key=settings.litellm_api_key)
+        service.ensure_openrouter_models_registered(
+            governed_models,
+            model_gateway_client=client,
+            openrouter_base_url=settings.openrouter_base_url,
+            openrouter_api_key=settings.provider_openrouter_api_key or settings.openrouter_api_key,
+        )
         payload = client.get_user_model_config(user_id=user_id, preferred_models=preferred_models)
+        model_pricing = {
+            m.model_id: (PricingType.FREE.value if m.pricing_type == PricingType.FREE else PricingType.PAID.value)
+            for m in governed_models
+        }
+        resolved_models = payload.get("models", []) if isinstance(payload, dict) else []
+        resolved_model_ids = {
+            model_id
+            for model_id in resolved_models
+            if isinstance(model_id, str)
+        }
+        model_routes = {
+            m.model_id: (
+                m.default_route
+                if m.provider == "ollama" and m.default_route
+                else f"litellm/{m.model_id}"
+            )
+            for m in governed_models
+            if m.model_id in resolved_model_ids
+        }
+        if isinstance(payload, dict):
+            payload = {**payload, "modelPricing": model_pricing, "modelRoutes": model_routes}
         return ModelConfigResponse(**payload)
 
     binding_port = UserRuntimeBindingServiceAdapter(
@@ -211,7 +264,10 @@ def get_runtime_service(
     runtime_manager_client = RuntimeManagerClient(base_url=base_url)
     runtime_manager_port = RuntimeManagerPortAdapter(runtime_manager_client)
 
-    renderer = RuntimeConfigRenderer(litellm_api_key=settings.litellm_api_key)
+    renderer = RuntimeConfigRenderer(
+        litellm_api_key=settings.litellm_api_key,
+        ollama_base_url=settings.ollama_base_url or "http://ollama:11434",
+    )
 
     return RuntimeService(
         binding_service=binding_port,
@@ -221,4 +277,19 @@ def get_runtime_service(
         config_renderer=renderer,
         route_host_suffix=settings.route_host_suffix,
     )
+
+
+def get_runtime_manager_client(
+    settings: AppSettings = Depends(get_app_settings),
+) -> RuntimeManagerClient:
+    base_url = settings.runtime_manager_base_url or "http://runtime-manager:18080"
+    return RuntimeManagerClient(base_url=base_url)
+
+
+def get_user_file_service() -> UserFileService:
+    """
+    提供用户文件管理服务
+    """
+    storage_manager = FileStorageManager()
+    return UserFileService(storage_manager=storage_manager)
 

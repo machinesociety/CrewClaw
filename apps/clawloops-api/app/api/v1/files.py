@@ -36,6 +36,9 @@ async def list_files(
         if not binding or not binding.runtimeId:
             raise HTTPException(status_code=400, detail="No container available")
         
+        if binding.observedState != "running":
+            raise HTTPException(status_code=400, detail="No container available")
+        
         files = runtime_service.list_files(binding.runtimeId, path)
         return FileListResponse(files=files)
     except HTTPException:
@@ -59,6 +62,9 @@ async def read_file(
         if not binding or not binding.runtimeId:
             raise HTTPException(status_code=400, detail="No container available")
         
+        if binding.observedState != "running":
+            raise HTTPException(status_code=400, detail="No container available")
+        
         content = runtime_service.read_file(binding.runtimeId, path)
         return FileReadResponse(content=content)
     except HTTPException:
@@ -80,6 +86,9 @@ async def write_file(
     try:
         binding = runtime_service.get_user_binding(user.userId)
         if not binding or not binding.runtimeId:
+            raise HTTPException(status_code=400, detail="No container available")
+        
+        if binding.observedState != "running":
             raise HTTPException(status_code=400, detail="No container available")
         
         runtime_service.write_file(binding.runtimeId, request.path, request.content)
@@ -106,6 +115,16 @@ async def upload_file(
         if not binding or not binding.runtimeId:
             raise HTTPException(status_code=400, detail="No container available")
         
+        if binding.observedState != "running":
+            raise HTTPException(status_code=400, detail="No container available")
+        
+        # 检查是否存在同名文件
+        directory = "/".join(path.split("/")[:-1]) if "/" in path else "/"
+        files = runtime_service.list_files(binding.runtimeId, directory)
+        filename = path.split("/")[-1]
+        if any(f.get("name") == filename for f in files):
+            raise HTTPException(status_code=409, detail="File already exists")
+        
         content = await file.read()
         runtime_service.write_file(binding.runtimeId, path, content)
         return {"success": True}
@@ -128,6 +147,9 @@ async def download_file(
     try:
         binding = runtime_service.get_user_binding(user.userId)
         if not binding or not binding.runtimeId:
+            raise HTTPException(status_code=400, detail="No container available")
+        
+        if binding.observedState != "running":
             raise HTTPException(status_code=400, detail="No container available")
         
         content = runtime_service.read_file(binding.runtimeId, path)

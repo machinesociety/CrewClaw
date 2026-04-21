@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import socket
 import time
-from pathlib import Path
+from dataclasses import dataclass
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import docker
 from docker.errors import APIError, NotFound
@@ -17,18 +19,34 @@ from app.schemas.contracts import (
     EnsureContainerRequest,
     StopContainerRequest,
 )
+from app.services.public_storage import sync_public_copy_for_user
 from app.services.config_writer import prepare_runtime_dirs, write_openclaw_config
-from app.services.drift_detector import detect_drift
 
-# Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class RuntimeStoragePaths:
+    container_root: str
+    container_config: str
+    container_workspace: str
+    host_root: str
+    host_config: str
+    host_workspace: str
+
+
+def _join_mount_path(base: str, *parts: str) -> str:
+    if "\\" in base or (len(base) >= 2 and base[1] == ":"):
+        return str(PureWindowsPath(base, *parts))
+    return str(PurePosixPath(base, *parts))
 
 
 class RuntimeExecutor:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._docker = docker.from_env()
+        self._user_files_host_root: str | None = None
 
     def _internal_endpoint(self, runtime_id: str) -> str:
         return f"http://rt-{runtime_id}:18789"
@@ -42,7 +60,22 @@ class RuntimeExecutor:
         host_port = bindings[0].get("HostPort")
         if not host_port:
             return None
-        return f"http://{self._settings.runtime_public_host}:{host_port}"
+
+        browser_url = f"http://{self._settings.runtime_public_host}:{host_port}"
+        try:
+            result = container.exec_run(["cat", "/home/node/.openclaw/openclaw.json"], user="node")
+            if result.exit_code == 0:
+                import json
+
+                config_content = result.output.decode()
+                config = json.loads(config_content)
+                gateway_token = config.get("gateway", {}).get("auth", {}).get("token")
+                if gateway_token:
+                    browser_url = f"{browser_url}/chat?session=main#token={gateway_token}"
+        except Exception as exc:
+            logger.error(f"Failed to read openclaw config: {exc}")
+
+        return browser_url
 
     def _list_managed(self, runtime_id: str):
         return self._docker.containers.list(
@@ -65,6 +98,95 @@ class RuntimeExecutor:
             )
         return containers[0] if containers else None
 
+    def _resolve_user_files_host_root(self) -> str:
+        if self._settings.runtime_user_files_host_path:
+            return self._settings.runtime_user_files_host_path
+        if self._user_files_host_root is not None:
+            return self._user_files_host_root
+
+        mount_dir = self._settings.runtime_user_files_mount_dir.rstrip("/")
+        # 使用容器名称而不是主机名，这样无论主机名是什么都能找到容器
+        container_name = os.environ.get("RUNTIME_MANAGER_CONTAINER_NAME", "crewclaw-runtime-manager")
+
+        try:
+            container = self._docker.containers.get(container_name)
+        except NotFound:
+            # 如果通过名称找不到，尝试通过标签查找
+            try:
+                containers = self._docker.containers.list(filters={"label": "traefik.enable=true"})
+                for c in containers:
+                    if c.name == container_name:
+                        container = c
+                        break
+            except Exception as e:
+                logger.error(f"Failed to find container: {e}")
+                raise RuntimeManagerError(
+                    "RUNTIME_STORAGE_PATH_UNRESOLVED",
+                    "failed to resolve runtime-manager container metadata for user-files mount",
+                    500,
+                ) from e
+
+        if container is None:
+            raise RuntimeManagerError(
+                "RUNTIME_STORAGE_PATH_UNRESOLVED",
+                "failed to resolve runtime-manager container metadata for user-files mount",
+                500,
+            )
+
+        mounts = container.attrs.get("Mounts", []) or []
+        for mount in mounts:
+            if mount.get("Destination", "").rstrip("/") == mount_dir:
+                source = mount.get("Source")
+                if source:
+                    self._user_files_host_root = source
+                    return source
+
+        # 如果找不到精确匹配，尝试查找父目录挂载
+        parent_mount_dir = "/var/lib/clawloops"
+        for mount in mounts:
+            if mount.get("Destination", "").rstrip("/") == parent_mount_dir:
+                source = mount.get("Source")
+                if source:
+                    # 构造完整的用户文件路径
+                    full_source = f"{source}/user-files"
+                    self._user_files_host_root = full_source
+                    logger.info(f"Using parent mount {source} with user-files subdirectory")
+                    return full_source
+
+        raise RuntimeManagerError(
+            "RUNTIME_STORAGE_PATH_UNRESOLVED",
+            f"failed to resolve host source for mount {mount_dir} or parent {parent_mount_dir}",
+            500,
+        )
+
+    def _resolve_runtime_storage_paths(self, user_id: str) -> RuntimeStoragePaths:
+        container_root = _join_mount_path(self._settings.runtime_user_files_mount_dir, user_id)
+        container_config = _join_mount_path(container_root, "openclaw-config")
+        container_workspace = _join_mount_path(container_root, "workspace")
+
+        host_root = _join_mount_path(self._resolve_user_files_host_root(), user_id)
+        host_config = _join_mount_path(host_root, "openclaw-config")
+        host_workspace = _join_mount_path(host_root, "workspace")
+
+        return RuntimeStoragePaths(
+            container_root=container_root,
+            container_config=container_config,
+            container_workspace=container_workspace,
+            host_root=host_root,
+            host_config=host_config,
+            host_workspace=host_workspace,
+        )
+
+    def _container_mounts_match(self, container, paths: RuntimeStoragePaths) -> bool:
+        container.reload()
+        mounts = container.attrs.get("Mounts", []) or []
+        mount_pairs = {(m.get("Source"), m.get("Destination")) for m in mounts}
+        expected_pairs = {
+            (paths.host_config, "/home/node/.openclaw"),
+            (paths.host_workspace, "/home/node/.openclaw/workspace"),
+        }
+        return expected_pairs.issubset(mount_pairs)
+
     def _wait_ready(self, host: str, port: int) -> bool:
         deadline = time.time() + self._settings.runtime_startup_grace_seconds
         consecutive = 0
@@ -79,23 +201,33 @@ class RuntimeExecutor:
             time.sleep(self._settings.runtime_startup_poll_seconds)
         return False
 
-    def _create_runtime_container(self, req: EnsureContainerRequest, labels: dict[str, str], alias: str):
-        # 先拉取镜像
+    def _create_runtime_container(
+        self,
+        req: EnsureContainerRequest,
+        labels: dict[str, str],
+        alias: str,
+        paths: RuntimeStoragePaths,
+    ):
         try:
             logger.info(f"Pulling image: {self._settings.runtime_openclaw_image_ref}")
             self._docker.images.pull(self._settings.runtime_openclaw_image_ref)
             logger.info("Image pulled successfully")
-        except Exception as e:
-            logger.error(f"Failed to pull image: {e}")
+        except Exception as exc:
+            logger.error(f"Failed to pull image: {exc}")
             raise RuntimeManagerError(
                 "RUNTIME_START_FAILED",
-                f"failed to pull image: {str(e)}",
+                f"failed to pull image: {str(exc)}",
                 500,
-            ) from e
-        
+            ) from exc
+
+        command_parts = [part for part in self._settings.runtime_openclaw_command.split(" ") if part]
+        if "--allow-unconfigured" not in command_parts:
+            command_parts.append("--allow-unconfigured")
+        logger.info(f"Using command: {command_parts}")
+
         container = self._docker.containers.create(
             image=self._settings.runtime_openclaw_image_ref,
-            command=self._settings.runtime_openclaw_command.split(" "),
+            command=command_parts,
             labels=labels,
             environment={
                 "HOME": "/home/node",
@@ -104,8 +236,8 @@ class RuntimeExecutor:
                 "OPENAI_BASE_URL": "http://litellm:4000",
             },
             volumes={
-                req.compat.openclawConfigDir: {"bind": "/home/node/.openclaw", "mode": "rw"},
-                req.compat.openclawWorkspaceDir: {
+                paths.host_config: {"bind": "/home/node/.openclaw", "mode": "rw"},
+                paths.host_workspace: {
                     "bind": "/home/node/.openclaw/workspace",
                     "mode": "rw",
                 },
@@ -120,51 +252,99 @@ class RuntimeExecutor:
     def ensure_running(self, req: EnsureContainerRequest) -> ContainerStateResponse:
         try:
             logger.info(f"Starting ensure_running for runtime {req.runtimeId}")
-            logger.info(f"Config dir: {req.compat.openclawConfigDir}")
-            logger.info(f"Workspace dir: {req.compat.openclawWorkspaceDir}")
-            
-            prepare_runtime_dirs(req.compat.openclawConfigDir, req.compat.openclawWorkspaceDir)
+            logger.info(f"Original compat config dir: {req.compat.openclawConfigDir}")
+            logger.info(f"Original compat workspace dir: {req.compat.openclawWorkspaceDir}")
+
+            paths = self._resolve_runtime_storage_paths(req.userId)
+            logger.info(f"Resolved container storage root: {paths.container_root}")
+            logger.info(f"Resolved host storage root: {paths.host_root}")
+
+            # Write through the runtime-manager container's mounted path so the
+            # host bind mount stays in sync across different Windows host paths.
+            prepare_runtime_dirs(paths.container_config, paths.container_workspace)
+
+            is_windows = os.name == "nt"
+            if not is_windows:
+                import subprocess
+
+                try:
+                    subprocess.run(["chmod", "-R", "777", paths.container_root], check=True, capture_output=True)
+                    logger.info(f"Set permissions to 777 for {paths.container_root}")
+                except Exception as exc:
+                    logger.warning(f"Failed to set permissions: {exc}")
+
             logger.info("Prepared runtime dirs")
-            
-            write_openclaw_config(req.compat.openclawConfigDir, req.renderedConfig.openclawJson)
+            sync_public_copy_for_user(req.userId)
+            logger.info("Synced public-area copy")
+            write_openclaw_config(paths.container_config, req.renderedConfig.openclawJson)
+
+            if not is_windows:
+                config_file = Path(paths.container_config) / "openclaw.json"
+                if config_file.exists():
+                    try:
+                        os.chown(config_file, 1000, 1000)
+                        config_file.chmod(0o666)
+                        logger.info(f"Set permissions for config file: {config_file}")
+                    except Exception as exc:
+                        logger.warning(f"Failed to set config file permissions: {exc}")
+
             logger.info("Wrote openclaw config")
 
-            def container_ip(c) -> str:
-                c.reload()
+            def container_ip(container) -> str:
+                container.reload()
                 return (
-                    c.attrs.get("NetworkSettings", {})
+                    container.attrs.get("NetworkSettings", {})
                     .get("Networks", {})
                     .get(self._settings.runtime_openclaw_network, {})
                     .get("IPAddress", "")
                 )
 
-            # 检查是否存在现有容器
             existing_containers = self._list_managed(req.runtimeId)
             container = None
-            
+
             if existing_containers:
                 container = existing_containers[0]
                 container.reload()
                 logger.info(f"Found existing container: {container.id}, status: {container.status}")
-                
-                # 如果容器已停止，直接启动它
-                if container.status in {"exited", "created"}:
-                    logger.info("Starting existing stopped container")
-                    container.start()
-                    container.reload()
-                    
-                    if container.status != "running":
-                        logger.error(f"Failed to start existing container, status: {container.status}")
-                        raise RuntimeManagerError("RUNTIME_START_FAILED", "failed to start existing container", 500)
-                elif container.status == "running":
-                    logger.info("Container is already running")
-                else:
-                    # 如果容器处于其他状态（如 restarting, paused, dead），删除并重建
-                    logger.info(f"Container in unexpected state: {container.status}, removing and recreating")
+
+                if not self._container_mounts_match(container, paths):
+                    logger.warning(
+                        "Existing container mounts do not match resolved host paths; recreating container "
+                        f"(runtimeId={req.runtimeId})"
+                    )
                     container.remove(force=True)
                     container = None
-            
-            # 如果没有现有容器或已删除，则创建新容器
+
+            if container is not None:
+                logger.info("Starting container with updated config")
+                try:
+                    logger.info(f"Container ID: {container.id}")
+                    logger.info(f"Container status before start: {container.status}")
+                    container.start()
+                    container.reload()
+                    logger.info(f"Container status after start: {container.status}")
+                    logs = container.logs(tail=100).decode()
+                    logger.info(f"Container logs: {logs}")
+                except Exception as exc:
+                    logger.error(f"Failed to start container: {exc}")
+                    if "network" in str(exc) and "not found" in str(exc):
+                        logger.info(
+                            f"Network not found, recreating network: {self._settings.runtime_openclaw_network}"
+                        )
+                        try:
+                            network = self._docker.networks.get(self._settings.runtime_openclaw_network)
+                            logger.info(f"Network already exists: {self._settings.runtime_openclaw_network}")
+                        except Exception:
+                            network = self._docker.networks.create(
+                                self._settings.runtime_openclaw_network,
+                                driver="bridge",
+                            )
+                            logger.info(f"Created network: {self._settings.runtime_openclaw_network}")
+
+                        alias = f"rt-{req.runtimeId}"
+                        network.connect(container, aliases=[alias])
+                        logger.info(f"Connected container to network: {self._settings.runtime_openclaw_network}")
+
             if container is None:
                 logger.info("Creating new container")
                 labels = {
@@ -177,23 +357,22 @@ class RuntimeExecutor:
                     "clawloops.configVersion": req.renderedConfig.configVersion,
                 }
                 alias = f"rt-{req.runtimeId}"
-                container = self._create_runtime_container(req, labels, alias)
+                container = self._create_runtime_container(req, labels, alias, paths)
                 container.reload()
                 logger.info(f"Created container with status: {container.status}")
-                
+
                 if container.status != "running":
                     logger.error(f"Container is not running, status: {container.status}")
-                    # 清理失败的容器
                     try:
                         container.remove(force=True)
                         logger.info(f"Removed failed container: {container.id}")
-                    except Exception as e:
-                        logger.error(f"Failed to remove failed container {container.id}: {e}")
+                    except Exception as exc:
+                        logger.error(f"Failed to remove failed container {container.id}: {exc}")
                     raise RuntimeManagerError("RUNTIME_START_FAILED", "container is not running", 500)
 
             ip = container_ip(container)
             logger.info(f"Container IP: {ip}")
-            
+
             if not ip or not self._wait_ready(ip, 18789):
                 logger.error("Failed to wait for container to be ready")
                 raise RuntimeManagerError(
@@ -201,10 +380,10 @@ class RuntimeExecutor:
                     "failed to prepare config or start container",
                     500,
                 )
-            
+
             browser_url = self._browser_url_from_container(container)
             logger.info(f"Container browser URL: {browser_url}")
-            
+
             return ContainerStateResponse(
                 runtimeId=req.runtimeId,
                 observedState="running",
@@ -245,16 +424,10 @@ class RuntimeExecutor:
             if container is not None:
                 container.remove(force=True)
             if req.retentionPolicy == "wipe_workspace" and req.compat is not None:
-                roots = {Path(req.compat.openclawConfigDir), Path(req.compat.openclawWorkspaceDir)}
-                dedup: list[Path] = []
-                for p in roots:
-                    if any(parent in p.parents for parent in dedup):
-                        continue
-                    dedup = [x for x in dedup if p not in x.parents]
-                    dedup.append(p)
-                for path in dedup:
-                    if path.exists():
-                        shutil.rmtree(path)
+                local_storage = self._resolve_runtime_storage_paths(req.userId).container_root
+                if os.path.exists(local_storage):
+                    shutil.rmtree(local_storage)
+                    logger.info(f"Deleted local storage: {local_storage}")
             return ContainerStateResponse(runtimeId=req.runtimeId, observedState="deleted", message="deleted")
         except RuntimeManagerError:
             raise
@@ -302,133 +475,120 @@ class RuntimeExecutor:
             )
 
     def list_files(self, container_id: str, path: str) -> list[dict]:
-        """
-        列出容器内的文件
-        """
         try:
             container = self._get_container_by_id(container_id)
-            
-            # 使用 ls -la 命令列出文件
-            cmd = ['ls', '-la', path]
-            result = container.exec_run(cmd, user='node')
-            
+            cmd = ["ls", "-la", path]
+            result = container.exec_run(cmd, user="node")
+
             if result.exit_code != 0:
                 raise RuntimeManagerError(
                     "FILE_LIST_FAILED",
                     f"failed to list files: {result.output.decode()}",
                     500,
                 )
-            
-            lines = result.output.decode().split('\n')
+
+            lines = result.output.decode().split("\n")
             files = []
-            
-            # 跳过第一行（total ...）和最后一行（空行）
             for line in lines[1:-1]:
                 if not line.strip():
                     continue
-                
+
                 parts = line.split()
                 if len(parts) < 9:
                     continue
-                
+
                 permissions = parts[0]
-                name = ' '.join(parts[8:])
+                name = " ".join(parts[8:])
                 size = int(parts[4]) if parts[4].isdigit() else 0
-                
-                # 判断是否是目录
-                is_dir = permissions.startswith('d')
-                
-                # 跳过 . 和 ..
-                if name in ['.', '..']:
+                is_dir = permissions.startswith("d")
+
+                if name in [".", ".."]:
                     continue
-                
-                files.append({
-                    'name': name,
-                    'path': f'{path}/{name}' if path != '/' else f'/{name}',
-                    'type': 'directory' if is_dir else 'file',
-                    'size': size,
-                })
-            
+
+                files.append(
+                    {
+                        "name": name,
+                        "path": f"{path}/{name}" if path != "/" else f"/{name}",
+                        "type": "directory" if is_dir else "file",
+                        "size": size,
+                    }
+                )
+
             return files
         except RuntimeManagerError:
             raise
-        except Exception as e:
+        except Exception as exc:
             logger.exception("Failed to list files")
             raise RuntimeManagerError(
                 "FILE_LIST_FAILED",
-                f"failed to list files: {str(e)}",
+                f"failed to list files: {str(exc)}",
                 500,
-            ) from e
+            ) from exc
 
     def read_file(self, container_id: str, path: str) -> str:
-        """
-        读取容器内的文件内容
-        """
         try:
             container = self._get_container_by_id(container_id)
-            
-            # 使用 cat 命令读取文件
-            cmd = ['cat', path]
-            result = container.exec_run(cmd, user='node')
-            
+            cmd = ["cat", path]
+            result = container.exec_run(cmd, user="node")
+
             if result.exit_code != 0:
                 raise RuntimeManagerError(
                     "FILE_READ_FAILED",
                     f"failed to read file: {result.output.decode()}",
                     500,
                 )
-            
+
             return result.output.decode()
         except RuntimeManagerError:
             raise
-        except Exception as e:
+        except Exception as exc:
             logger.exception("Failed to read file")
             raise RuntimeManagerError(
                 "FILE_READ_FAILED",
-                f"failed to read file: {str(e)}",
+                f"failed to read file: {str(exc)}",
                 500,
-            ) from e
+            ) from exc
 
     def write_file(self, container_id: str, path: str, content: str) -> None:
-        """
-        写入文件内容到容器内
-        """
         try:
             container = self._get_container_by_id(container_id)
-            
-            import tempfile
-            import os
-            import tarfile
-            from io import BytesIO
-            
-            # 获取文件名和目录
+
+            # 检查文件是否已存在
             file_dir = os.path.dirname(path)
             file_name = os.path.basename(path)
             
-            # 处理二进制内容
-            content_bytes = content.encode('utf-8') if isinstance(content, str) else content
-            
-            # 创建 tar 归档
+            # 列出目录中的文件
+            files = self.list_files(container_id, file_dir)
+            for file in files:
+                if file['name'] == file_name and file['type'] == 'file':
+                    raise RuntimeManagerError(
+                        "FILE_ALREADY_EXISTS",
+                        f"File already exists: {path}",
+                        409,
+                    )
+
+            import tarfile
+            from io import BytesIO
+
+            content_bytes = content.encode("utf-8") if isinstance(content, str) else content
+
             tar_buffer = BytesIO()
-            with tarfile.open(fileobj=tar_buffer, mode='w') as tar:
+            with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
                 tarinfo = tarfile.TarInfo(name=file_name)
                 tarinfo.size = len(content_bytes)
                 tarinfo.mtime = int(time.time())
                 tarinfo.mode = 0o644
                 tar.addfile(tarinfo, BytesIO(content_bytes))
-            
+
             tar_buffer.seek(0)
-            
-            # 将 tar 归档放入容器
             container.put_archive(file_dir, tar_buffer)
-            
             logger.info(f"Successfully wrote file: {path}")
         except RuntimeManagerError:
             raise
-        except Exception as e:
+        except Exception as exc:
             logger.exception("Failed to write file")
             raise RuntimeManagerError(
                 "FILE_WRITE_FAILED",
-                f"failed to write file: {str(e)}",
+                f"failed to write file: {str(exc)}",
                 500,
-            ) from e
+            ) from exc

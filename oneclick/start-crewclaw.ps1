@@ -1,18 +1,286 @@
+﻿# 检查并更新 WSL
+Write-Host "正在检查并更新 WSL..." -ForegroundColor Cyan
 try {
     wsl --update --web-download
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "WSL 更新失败，退出脚本" -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "WSL 更新成功" -ForegroundColor Green
 } catch {
+    Write-Host "WSL 操作失败: $($_.Exception.Message)" -ForegroundColor Red
+    exit 1
+}
+
+# 检查Docker是否可用
+Write-Host "正在检查 Docker 是否可用..." -ForegroundColor Cyan
+try {
+    $dockerInfo = docker info 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Docker 连接失败"
+    }
+    Write-Host "Docker 连接成功" -ForegroundColor Green
+} catch {
+    Write-Host "无法连接到 Docker，请检查 Docker Desktop 是否已启动" -ForegroundColor Red
+    Write-Host "请按以下步骤操作：" -ForegroundColor Yellow
+    Write-Host "1. 打开 Docker Desktop" -ForegroundColor Yellow
+    Write-Host "2. 等待 Docker Desktop 完全启动（状态栏显示 Docker is running）" -ForegroundColor Yellow
+    Write-Host "3. 重新运行此脚本" -ForegroundColor Yellow
+    exit 1
 }
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+    Write-Host "未找到 Docker 命令，请确保 Docker Desktop 已正确安装" -ForegroundColor Red
     exit 1
 }
+
+function Set-OrAppendEnvValue {
+    param(
+        [string]$FilePath,
+        [string]$Key,
+        [string]$Value
+    )
+
+    $prefix = "$Key="
+    $lines = @()
+    if (Test-Path $FilePath) {
+        $lines = Get-Content $FilePath
+    }
+
+    $updated = $false
+    $result = foreach ($line in $lines) {
+        if ($line -like "$prefix*") {
+            $updated = $true
+            "$prefix$Value"
+        } else {
+            $line
+        }
+    }
+
+    if (-not $updated) {
+        $result += "$prefix$Value"
+    }
+
+    Set-Content $FilePath -Value $result
+}
+
+function Sync-UserFilesPathEnv {
+    $scriptDir = Split-Path -Parent $PSCommandPath
+    $projectRoot = (Resolve-Path (Join-Path $scriptDir "..")).Path
+    $userFilesPath = Join-Path $projectRoot "user-files"
+
+    if (-not (Test-Path $userFilesPath)) {
+        New-Item -ItemType Directory -Path $userFilesPath -Force | Out-Null
+    }
+
+    $windowsPath = (Resolve-Path $userFilesPath).Path
+    $composeUserFilesPath = $windowsPath -replace '\\', '/'
+    $runtimeUserFilesPath = $composeUserFilesPath
+
+    if ($windowsPath -match '^([A-Za-z]):\\(.*)$') {
+        $drive = $matches[1].ToLower()
+        $rest = ($matches[2] -replace '\\', '/')
+        $runtimeUserFilesPath = "/run/desktop/mnt/host/$drive/$rest"
+    }
+
+    $envFile = Join-Path $projectRoot "infra\\compose\\.env"
+    Set-OrAppendEnvValue -FilePath $envFile -Key "USER_FILES_HOST_PATH" -Value $composeUserFilesPath
+    Set-OrAppendEnvValue -FilePath $envFile -Key "RUNTIME_USER_FILES_HOST_PATH" -Value $runtimeUserFilesPath
+}
+
+function Ensure-RuntimeManagerUserFilesMount {
+    $scriptDir = Split-Path -Parent $PSCommandPath
+    $projectRoot = (Resolve-Path (Join-Path $scriptDir "..")).Path
+    $composeFile = Join-Path $projectRoot "infra\\compose\\docker-compose.yml"
+
+    if (-not (Test-Path $composeFile)) {
+        return
+    }
+
+    $content = Get-Content $composeFile -Raw
+
+    if ($content -match '(?m)^\s*-\s*/var/lib/clawloops:/var/lib/clawloops\s*$') {
+        $content = $content -replace '(?m)^(\s*)-\s*/var/lib/clawloops:/var/lib/clawloops\s*$', '$1- ${USER_FILES_HOST_PATH:-../../user-files}:/var/lib/clawloops/user-files'
+    }
+
+    if ($content -notmatch 'RUNTIME_MANAGER_CONTAINER_NAME=crewclaw-runtime-manager') {
+        $content = $content -replace '(?m)^(\s*-\s*RUNTIME_MANAGER_PORT=18080\s*)$', "`$1`r`n      - RUNTIME_MANAGER_CONTAINER_NAME=crewclaw-runtime-manager"
+    }
+
+    if ($content -notmatch 'RUNTIME_USER_FILES_HOST_PATH=\$\{RUNTIME_USER_FILES_HOST_PATH:-\}') {
+        $content = $content -replace '(?m)^(\s*-\s*RUNTIME_OPENCLAW_NETWORK=clawloops_shared\s*)$', "`$1`r`n      - RUNTIME_USER_FILES_HOST_PATH=`${RUNTIME_USER_FILES_HOST_PATH:-}"
+    }
+
+    Set-Content $composeFile -Value $content
+}
+
+Sync-UserFilesPathEnv
+Ensure-RuntimeManagerUserFilesMount
 
 # ----------------------------
 # 3. 下载工作台镜像
 # ----------------------------
-try {
-    docker pull ghcr.io/openclaw/openclaw@sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02
-} catch {
+$fixedImageTag = "ghcr.io/openclaw/openclaw@sha256:9d5f1dfbd5deedc37706c78f745b958ffbe9b4f20840cfb4d49c617a50326902"
+$fixedDigest = "sha256:9d5f1dfbd5deedc37706c78f745b958ffbe9b4f20840cfb4d49c617a50326902"
+
+# 获取固定版本的openclaw镜像的digest
+function Get-LatestOpenClawDigest {
+    Write-Host "使用固定版本的openclaw镜像: $fixedImageTag" -ForegroundColor Cyan
+    return $fixedDigest
+}
+
+# 更新文件中的镜像digest
+function Update-ImageDigest {
+    param(
+        [string]$digest
+    )
+    
+    Write-Host "更新文件中的镜像digest..." -ForegroundColor Cyan
+    
+    # 确保digest格式正确
+    $cleanDigest = $digest -replace '.*(sha256:[a-f0-9]+).*', '$1'
+    
+    # 更新docker-compose.yml文件
+    $dockerComposeFile = "infra\compose\docker-compose.yml"
+    if (Test-Path $dockerComposeFile) {
+        Write-Host "更新 $dockerComposeFile 文件..." -ForegroundColor Cyan
+        $content = Get-Content $dockerComposeFile -Raw
+        $newContent = $content -replace 'ghcr\.io/openclaw/openclaw@sha256:[a-f0-9]+', "ghcr.io/openclaw/openclaw@$cleanDigest"
+        Set-Content $dockerComposeFile -Value $newContent
+        Write-Host "$dockerComposeFile 文件更新成功" -ForegroundColor Green
+    } else {
+        Write-Host "$dockerComposeFile 文件不存在" -ForegroundColor Red
+    }
+    
+    # 更新settings.py文件
+    $settingsFile = "services\runtime-manager\app\core\settings.py"
+    if (Test-Path $settingsFile) {
+        Write-Host "更新 $settingsFile 文件..." -ForegroundColor Cyan
+        $content = Get-Content $settingsFile -Raw
+        # 替换任何格式的镜像引用，使用单行格式避免语法错误
+        $replacement = 'runtime_openclaw_image_ref: str = "ghcr.io/openclaw/openclaw@' + $cleanDigest + '"'
+        $newContent = $content -replace 'runtime_openclaw_image_ref: str = "[^"]+"', $replacement
+        $newContent = $newContent -replace 'runtime_openclaw_image_ref: str = \([^)]+\)', $replacement
+        Set-Content $settingsFile -Value $newContent
+        Write-Host "$settingsFile 文件更新成功" -ForegroundColor Green
+    } else {
+        Write-Host "$settingsFile 文件不存在" -ForegroundColor Red
+    }
+}
+
+# 重新构建docker服务
+function Rebuild-DockerServices {
+    Write-Host "重新构建docker服务..." -ForegroundColor Cyan
+    
+    try {
+        # 切换到compose目录
+        $composeDir = "infra\compose"
+        Set-Location $composeDir
+        
+        # 停止并移除旧容器
+        Write-Host "停止并移除旧容器..." -ForegroundColor Cyan
+        & docker compose down
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "停止旧容器失败，退出脚本" -ForegroundColor Red
+            Set-Location ..\.. -ErrorAction SilentlyContinue
+            exit 1
+        }
+        
+        # 确保使用固定版本的镜像
+        Write-Host "确保使用固定版本的镜像..." -ForegroundColor Cyan
+        & docker pull $fixedImageTag
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "拉取固定版本镜像失败，退出脚本" -ForegroundColor Red
+            Set-Location ..\.. -ErrorAction SilentlyContinue
+            exit 1
+        }
+        
+        # 构建并启动新容器
+        Write-Host "构建并启动新容器..." -ForegroundColor Cyan
+        & docker compose up -d --build
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "构建容器失败，退出脚本" -ForegroundColor Red
+            Set-Location ..\.. -ErrorAction SilentlyContinue
+            exit 1
+        }
+        
+        # 切换回项目根目录
+        Set-Location ..\..
+        
+        Write-Host "Docker服务重新构建成功，使用的是固定版本的镜像: $fixedImageTag" -ForegroundColor Green
+    } catch {
+        Write-Host "重新构建Docker服务时出错: $($_.Exception.Message)" -ForegroundColor Red
+        # 确保切换回项目根目录
+        Set-Location ..\.. -ErrorAction SilentlyContinue
+        exit 1
+    }
+}
+
+# 直接拉取固定版本镜像并构建服务
+# 获取固定版本的镜像digest
+$imageDigest = Get-LatestOpenClawDigest
+
+# 定义尝试次数
+$maxAttempts = 4
+
+# 尝试使用原始源下载
+$downloadSuccess = $false
+Write-Host "尝试下载固定版本的openclaw镜像..." -ForegroundColor Cyan
+
+for ($i = 1; $i -le $maxAttempts; $i++) {
+    Write-Host "尝试次数: $i/$maxAttempts" -ForegroundColor Cyan
+    $startTime = Get-Date
+    Write-Host "开始时间: $startTime" -ForegroundColor Cyan
+    
+    # 直接执行docker pull命令，使用固定版本
+    & docker pull $fixedImageTag 2>&1
+    
+    # 检查命令执行结果
+    if ($LASTEXITCODE -eq 0) {
+        $endTime = Get-Date
+        $elapsedTime = $endTime - $startTime
+        Write-Host "结束时间: $endTime" -ForegroundColor Cyan
+        Write-Host "实际用时: $($elapsedTime.TotalMinutes.ToString('0.00')) 分钟" -ForegroundColor Cyan
+        Write-Host "镜像下载成功" -ForegroundColor Green
+        $downloadSuccess = $true
+        break
+    } else {
+        $endTime = Get-Date
+        $elapsedTime = $endTime - $startTime
+        Write-Host "结束时间: $endTime" -ForegroundColor Cyan
+        Write-Host "实际用时: $($elapsedTime.TotalMinutes.ToString('0.00')) 分钟" -ForegroundColor Cyan
+        Write-Host "镜像下载失败，准备重试..." -ForegroundColor Yellow
+    }
+}
+
+# 如果所有镜像源都失败
+if (-not $downloadSuccess) {
+    Write-Host "镜像下载失败，退出脚本" -ForegroundColor Red
+    Write-Host "请在 Docker Desktop 的设置中修改 Docker Engine 配置：" -ForegroundColor Yellow
+    Write-Host "1. 打开 Docker Desktop"
+    Write-Host "2. 点击 Settings"
+    Write-Host "3. 点击 Docker Engine"
+    Write-Host "4. 将配置修改为：" -ForegroundColor Yellow
+    Write-Host '{
+  "builder": {
+    "gc": {
+      "defaultKeepStorage": "20GB",
+      "enabled": true
+    }
+  },
+  "experimental": false,
+  "registry-mirrors": [
+    "https://docker.m.daocloud.io"
+  ]
+}' -ForegroundColor Yellow
+    Write-Host "5. 点击 Apply & Restart" -ForegroundColor Yellow
+    exit 1
+} else {
+    # 更新文件中的镜像digest
+    Update-ImageDigest -digest $imageDigest
+    
+    # 重新构建docker服务
+    Rebuild-DockerServices
 }
 
 
@@ -46,9 +314,21 @@ try {
         $envFile = "infra\compose\.env"
         if (Test-Path $envFile) {
             $envContent = Get-Content $envFile
-            $envContent[0] = "CLAWLOOPS_DOMAIN=clawloops.$localIP.nip.io"
-            $envContent[1] = "RUNTIME_MANAGER_DOMAIN=runtime-manager.$localIP.nip.io"
+            $envContent[0] = "CLAWLOOPS_DOMAIN=clawloops.$localIP"
+            $envContent[1] = "RUNTIME_MANAGER_DOMAIN=runtime-manager.$localIP"
             $envContent[2] = "RUNTIME_PUBLIC_HOST=$localIP"
+            if ($envContent.Count -lt 5) {
+                $envContent = @(
+                    $envContent[0]
+                    $envContent[1]
+                    $envContent[2]
+                    "RUNTIME_PUBLIC_BASE_URL=http://$localIP"
+                    "RUNTIME_BROWSER_SCHEME=http"
+                ) + $envContent[3..($envContent.Count - 1)]
+            } else {
+                $envContent[3] = "RUNTIME_PUBLIC_BASE_URL=http://$localIP"
+                $envContent[4] = "RUNTIME_BROWSER_SCHEME=http"
+            }
             Set-Content $envFile -Value $envContent
         }
         
@@ -67,55 +347,22 @@ try {
 } catch {
 }
 
-# ----------------------------
-# 5. 启动服务
-# ----------------------------
-try {
-    # 切换到 compose 目录执行命令
-    $composeDir = "infra\compose"
-    Set-Location $composeDir
-    
-    # 执行启动命令
-    docker compose up -d
-    
-    # 切换回项目根目录
-    Set-Location ..\..
-} catch {
-    # 确保切换回项目根目录
-    Set-Location ..\.. -ErrorAction SilentlyContinue
-    exit 1
-}
-
-# ----------------------------
-# 6. 显示服务状态
-# ----------------------------
-try {
-    # 切换到 compose 目录执行命令
-    $composeDir = "infra\compose"
-    Set-Location $composeDir
-    
-    # 执行状态检查命令
-    docker compose ps
-    
-    # 切换回项目根目录
-    Set-Location ..\..
-} catch {
-    # 确保切换回项目根目录
-    Set-Location ..\.. -ErrorAction SilentlyContinue
-}
 
 # ----------------------------
 # 7. 自动打开浏览器
 # ----------------------------
 try {
-    # 读取更新后的 .env 文件，获取实际的访问地址
+    # 读取更新后的 .env 文件，获取实际的访问IP
     $envFile = "infra\compose\.env"
     if (Test-Path $envFile) {
         $envContent = Get-Content $envFile
-        $clawloopsDomain = $envContent[0].Split('=')[1]
-        $accessUrl = "http://$clawloopsDomain"
+        # 直接使用IP地址访问，避免依赖hosts文件配置
+        $runtimePublicHost = $envContent[2].Split('=')[1]
+        $accessUrl = "http://$runtimePublicHost"
         
+        Write-Host "正在打开浏览器，访问地址: $accessUrl" -ForegroundColor Green
         Start-Process $accessUrl
     }
 } catch {
+    Write-Host "打开浏览器时出错: $($_.Exception.Message)" -ForegroundColor Red
 }

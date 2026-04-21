@@ -56,6 +56,12 @@ def _apply_recursive_permissions(root: Path) -> None:
 def prepare_runtime_dirs(config_dir: str, workspace_dir: str) -> None:
     config_path = Path(config_dir)
     workspace_path = Path(workspace_dir)
+    
+    # 确保父目录存在并设置权限
+    for path in [config_path.parent, workspace_path.parent]:
+        if path.exists():
+            _prepare_dir(path)
+    
     _prepare_dir(config_path)
     _apply_recursive_permissions(config_path)
     if workspace_path != config_path:

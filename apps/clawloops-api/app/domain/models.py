@@ -7,6 +7,11 @@ class ModelSource(str, Enum):
     LOCAL = "local"
 
 
+class PricingType(str, Enum):
+    FREE = "free"
+    PAID = "paid"
+
+
 @dataclass
 class Model:
     """
@@ -17,10 +22,12 @@ class Model:
     name: str
     provider: str | None
     source: ModelSource
+    pricing_type: PricingType = PricingType.FREE
     enabled: bool = True
     user_visible: bool = True
     default_route: str | None = None
     default_provider_credential_id: str | None = None
+    upstream_model_id: str | None = None
 
 
 @dataclass

@@ -70,6 +70,11 @@ class UserService:
 
             raise UserNotFoundError()
 
+        # 防止禁用主管理员账号
+        if user_id == 'u_seed_admin' and status == UserStatus.DISABLED:
+            from app.core.errors import AccessDeniedError
+            raise AccessDeniedError('Cannot disable seed admin user')
+
         user.status = status
         self._user_repo.save(user)
         return user

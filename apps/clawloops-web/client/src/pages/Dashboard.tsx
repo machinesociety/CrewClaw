@@ -1,4 +1,4 @@
-/**
+﻿/**
  * User Dashboard - /app
  * Design: Crafted Dark - ClawLoops Platform
  *
@@ -13,6 +13,7 @@ import { useLocation, useSearch } from 'wouter';
 import {
   runtimeApi,
   modelsApi,
+  adminApi,
   workspaceApi,
   RuntimeStatusProjection,
   RuntimeTask,
@@ -119,6 +120,11 @@ function deriveRuntimeUIState(status: RuntimeStatusProjection | null): RuntimeUI
   if (observedState === 'deleted') return 'runtimeStopped';
   if (observedState === 'error' || status.lastError) return 'runtimeError';
   return 'runtimeUnknown';
+}
+
+function isRuntimeStartingOrRunning(status: RuntimeStatusProjection | null): boolean {
+  if (!status) return false;
+  return status.desiredState === 'running' || status.observedState === 'creating' || status.observedState === 'running';
 }
 
 // ============================================================
@@ -346,14 +352,37 @@ function RuntimeCard({
 // Models Card
 // ============================================================
 
-function ModelsCard({ models, loading }: { models: Model[]; loading: boolean }) {
+function PricingBadge({ pricingType }: { pricingType?: Model['pricingType'] }) {
+  if (!pricingType) return null;
+  return (
+    <StatusBadge variant={pricingType === 'paid' ? 'warning' : 'neutral'}>
+      {pricingType === 'paid' ? '付费' : '免费'}
+    </StatusBadge>
+  );
+}
+
+function ModelsCard({
+  models,
+  loading,
+  canManage,
+  updatingId,
+  onToggleEnabled,
+}: {
+  models: Model[];
+  loading: boolean;
+  canManage: boolean;
+  updatingId: string | null;
+  onToggleEnabled: (modelId: string, enabled: boolean) => void;
+}) {
   return (
     <Card className="card-glow">
       <CardHeader className="pb-3">
         <CardTitle className="text-base flex items-center gap-2" style={{ fontFamily: 'Space Grotesk' }}>
           <Zap className="w-4.5 h-4.5 text-primary" />
           可用模型
-          <span className="text-xs text-muted-foreground font-normal ml-1">（只读）</span>
+          {!canManage && (
+            <span className="text-xs text-muted-foreground font-normal ml-1">（只读）</span>
+          )}
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -381,12 +410,25 @@ function ModelsCard({ models, loading }: { models: Model[]; loading: boolean }) 
                   )}
                 </div>
                 <div className="flex items-center gap-2">
+                  <PricingBadge pricingType={model.pricingType} />
                   {model.isDefault && (
                     <StatusBadge variant="info">默认</StatusBadge>
                   )}
-                  <StatusBadge variant={model.enabled ? 'success' : 'neutral'}>
-                    {model.enabled ? '启用' : '禁用'}
-                  </StatusBadge>
+                  {canManage ? (
+                    <Button
+                      size="sm"
+                      variant={model.enabled ? 'outline' : 'default'}
+                      className="h-7 text-xs"
+                      disabled={updatingId === model.modelId}
+                      onClick={() => onToggleEnabled(model.modelId, !(model.enabled ?? false))}
+                    >
+                      {model.enabled ? '下架' : '上架'}
+                    </Button>
+                  ) : (
+                    <StatusBadge variant={model.enabled ? 'success' : 'neutral'}>
+                      {model.enabled ? '启用' : '禁用'}
+                    </StatusBadge>
+                  )}
                 </div>
               </div>
             ))}
@@ -492,6 +534,7 @@ function DashboardContent() {
   // Models state
   const [models, setModels] = useState<Model[]>([]);
   const [modelsLoading, setModelsLoading] = useState(true);
+  const [modelsUpdatingId, setModelsUpdatingId] = useState<string | null>(null);
 
   // Task state
   const [activeTask, setActiveTask] = useState<RuntimeTask | null>(null);
@@ -526,12 +569,36 @@ function DashboardContent() {
 
   const loadModels = useCallback(async () => {
     try {
-      const res = await modelsApi.list();
+      const res = user?.isAdmin ? await adminApi.models.list() : await modelsApi.list();
       setModels(res.models || []);
     } catch {
       // Non-critical, silently fail
     } finally {
       setModelsLoading(false);
+    }
+  }, [user?.isAdmin]);
+
+  const handleToggleModelEnabled = useCallback(async (modelId: string, enabled: boolean) => {
+    setModelsUpdatingId(modelId);
+    try {
+      const updated = await adminApi.models.update(
+        modelId,
+        enabled ? { enabled: true, userVisible: true } : { enabled: false },
+      );
+      setModels((prev) => prev.map((m) => (m.modelId === modelId ? { ...m, ...updated } : m)));
+      if (updated.runtimeRefreshTriggered) {
+        toast.success(enabled ? '模型已上架，OpenClaw 已刷新' : '模型已下架，OpenClaw 已刷新', {
+          description: updated.runtimeBrowserUrl
+            ? `当前工作区模型目录已重载。如聊天页已打开，请刷新一次页面：${updated.runtimeBrowserUrl}`
+            : '当前工作区模型目录已重载。如聊天页已打开，请刷新一次页面。',
+        });
+      } else {
+        toast.success(enabled ? '模型已上架' : '模型已下架');
+      }
+    } catch (e) {
+      toast.error(isAppError(e) ? e.message : '更新失败');
+    } finally {
+      setModelsUpdatingId(null);
     }
   }, []);
 
@@ -541,6 +608,32 @@ function DashboardContent() {
     setModelsLoading(true);
     Promise.all([loadRuntimeStatus(), loadModels()]);
   }, [loadRuntimeStatus, loadModels]);
+
+  useEffect(() => {
+    if (!runtimeStatus) return;
+
+    // If runtime is already ready/running, clear any stale "start" in-progress UI state
+    // so buttons reflect the actual backend state.
+    if (
+      actionInProgress === 'start' &&
+      runtimeStatus.observedState === 'running' &&
+      runtimeStatus.ready
+    ) {
+      setActionInProgress(null);
+      setActiveTask(null);
+      pollingRef.current = false;
+    }
+
+    // If runtime is fully stopped/deleted, clear stale "stop" state too.
+    if (
+      actionInProgress === 'stop' &&
+      (runtimeStatus.observedState === 'stopped' || runtimeStatus.observedState === 'deleted')
+    ) {
+      setActionInProgress(null);
+      setActiveTask(null);
+      pollingRef.current = false;
+    }
+  }, [runtimeStatus, actionInProgress]);
 
   // ============================================================
   // Task polling
@@ -579,6 +672,20 @@ function DashboardContent() {
       toast.success('启动任务已提交');
       startPolling(res.taskId, 'start');
     } catch (e) {
+      try {
+        const latestStatus = await runtimeApi.status();
+        setRuntimeStatus(latestStatus);
+        if (isRuntimeStartingOrRunning(latestStatus)) {
+          toast.success('启动任务已提交', {
+            description: '运行时已进入启动流程，请稍候刷新状态。',
+          });
+          setActionInProgress('start');
+          return;
+        }
+      } catch {
+        // Ignore follow-up status check errors and fall back to the original error toast.
+      }
+
       if (isAppError(e)) {
         toast.error(`启动失败: ${e.message}`, { description: e.code });
       } else {
@@ -678,7 +785,13 @@ function DashboardContent() {
         />
 
         {/* Models Card */}
-        <ModelsCard models={models} loading={modelsLoading} />
+        <ModelsCard
+          models={models}
+          loading={modelsLoading}
+          canManage={!!user?.isAdmin}
+          updatingId={modelsUpdatingId}
+          onToggleEnabled={handleToggleModelEnabled}
+        />
 
         {/* User Info Card */}
         <Card className="card-glow">

@@ -5,8 +5,6 @@ services:
     image: traefik:v3.2.3
     container_name: crewclaw-traefik
     restart: unless-stopped
-    environment:
-      - DOCKER_API_VERSION=1.44
     command:
       - --configFile=/etc/traefik/traefik.yml
     ports:
@@ -35,6 +33,11 @@ services:
       - CLAWLOOPS_LITELLM_API_KEY=${LITELLM_MASTER_KEY:-sk-local-master}
       - CLAWLOOPS_MODEL_GATEWAY_BASE_URL=${CLAWLOOPS_MODEL_GATEWAY_BASE_URL:-http://litellm:4000}
       - CLAWLOOPS_MODEL_GATEWAY_DEFAULT_MODELS=${CLAWLOOPS_MODEL_GATEWAY_DEFAULT_MODELS:-qwen-max-proxy}
+      - CLAWLOOPS_OPENROUTER_API_KEY=${CLAWLOOPS_OPENROUTER_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
+    volumes:
+      - ${USER_FILES_HOST_PATH:-../../user-files}:/app/user-files
     labels:
       - traefik.enable=true
       - traefik.http.routers.clawloops_api.rule=Host(`${CLAWLOOPS_DOMAIN}`) && PathPrefix(`/api`)
@@ -75,11 +78,14 @@ services:
       - PYTHONUNBUFFERED=1
       - RUNTIME_MANAGER_HOST=0.0.0.0
       - RUNTIME_MANAGER_PORT=18080
+      - RUNTIME_MANAGER_CONTAINER_NAME=crewclaw-runtime-manager
       - RUNTIME_PUBLIC_HOST=${RUNTIME_PUBLIC_HOST:-localhost}
       - RUNTIME_OPENCLAW_NETWORK=clawloops_shared
+      - RUNTIME_USER_FILES_HOST_PATH=${RUNTIME_USER_FILES_HOST_PATH:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - /var/lib/clawloops:/var/lib/clawloops
+      - ${USER_FILES_HOST_PATH:-../../user-files}:/var/lib/clawloops/user-files
+      - ${PUBLIC_AREA_HOST_PATH:-../../public-area}:/var/lib/clawloops/public-area
     labels:
       - traefik.enable=true
       - traefik.http.routers.runtime_manager.rule=Host(`${RUNTIME_MANAGER_DOMAIN}`)
@@ -93,7 +99,7 @@ services:
   prewarm-openclaw:
     profiles:
       - prewarm
-    image: "ghcr.io/openclaw/openclaw@sha256:a5a4c83b773aca85a8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02"
+    image: "ghcr.io/openclaw/openclaw@latest: Pulling from openclaw/openclaw Digest: sha256:d65cc3d5fd0c8b1f752c2f70377843230112250c10e99c3b61769234c217c5db Status: Image is up to date for ghcr.io/openclaw/openclaw:latest ghcr.io/openclaw/openclaw:latest sha256:d65cc3d5fd0c8b1f752c2f70377843230112250c10e99c3b61769234c217c5db"
 
   prewarm-litellm:
     profiles:
@@ -114,6 +120,7 @@ services:
     environment:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-local-master}
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
     volumes:
       - ./litellm.config.yaml:/app/config.yaml:ro
     networks:
@@ -125,3 +132,15 @@ networks:
     driver: bridge
 
 volumes: {}
+
+
+
+
+
+
+
+
+
+
+
+
