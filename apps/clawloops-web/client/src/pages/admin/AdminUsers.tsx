@@ -211,7 +211,7 @@ function UsersListContent() {
                           variant="ghost"
                           size="sm"
                           className="h-7 text-xs gap-1"
-                          disabled={patchingUserId === user.userId || (user.status === 'active' && (currentUser?.userId === user.userId || user.userId === 'u_seed_admin'))}
+                          disabled={patchingUserId === user.userId || (user.status === 'active' && (currentUser?.userId === user.userId || user.userId === 'u_seed_admin' || (user.role === 'admin' && currentUser?.userId !== 'u_seed_admin')))}
                           onClick={() => {
                             if (user.status === 'active' && currentUser?.userId === user.userId) {
                               toast.error('无法禁用自己的账号');
@@ -221,8 +221,8 @@ function UsersListContent() {
                               toast.error('无法禁用主管理员账号');
                               return;
                             }
-                            if (user.status === 'active' && user.role === 'admin') {
-                              toast.error('无法禁用其他管理员账号');
+                            if (user.status === 'active' && user.role === 'admin' && currentUser?.userId !== 'u_seed_admin') {
+                              toast.error('被邀请的管理员不能禁用其他管理员账号');
                               return;
                             }
                             setConfirmDialog({
