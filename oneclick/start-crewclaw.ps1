@@ -1,6 +1,15 @@
-﻿try {
+﻿# 检查并更新 WSL
+Write-Host "正在检查并更新 WSL..." -ForegroundColor Cyan
+try {
     wsl --update --web-download
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "WSL 更新失败，退出脚本" -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "WSL 更新成功" -ForegroundColor Green
 } catch {
+    Write-Host "WSL 操作失败: $($_.Exception.Message)" -ForegroundColor Red
+    exit 1
 }
 
 # 检查Docker是否可用
@@ -111,36 +120,13 @@ Ensure-RuntimeManagerUserFilesMount
 # ----------------------------
 # 3. 下载工作台镜像
 # ----------------------------
-$finalTag = "ghcr.io/openclaw/openclaw:latest"
+$fixedImageTag = "ghcr.io/openclaw/openclaw@sha256:9d5f1dfbd5deedc37706c78f745b958ffbe9b4f20840cfb4d49c617a50326902"
+$fixedDigest = "sha256:9d5f1dfbd5deedc37706c78f745b958ffbe9b4f20840cfb4d49c617a50326902"
 
-# 获取最新版本的openclaw镜像的digest
+# 获取固定版本的openclaw镜像的digest
 function Get-LatestOpenClawDigest {
-    Write-Host "正在获取最新版本的openclaw镜像信息..." -ForegroundColor Cyan
-    try {
-        # 方法1：尝试直接拉取latest标签，然后获取其digest
-        Write-Host "尝试拉取最新版本的openclaw镜像..." -ForegroundColor Cyan
-        # 直接执行docker pull命令，显示原始进度条
-        & docker pull ghcr.io/openclaw/openclaw:latest 2>&1
-        
-        # 检查是否拉取成功
-        if ($LASTEXITCODE -eq 0) {
-            # 获取镜像的digest
-            $imageInfo = docker images ghcr.io/openclaw/openclaw:latest --format "{{.Digest}}"
-            if ($imageInfo) {
-                Write-Host "获取到最新版本的openclaw镜像digest: $imageInfo" -ForegroundColor Green
-                return $imageInfo
-            }
-        } else {
-            Write-Host "拉取镜像时出错" -ForegroundColor Yellow
-        }
-        
-        # 如果无法获取最新版本，使用默认的digest
-        Write-Host "无法获取最新版本的openclaw镜像信息，使用默认版本..." -ForegroundColor Yellow
-        return "sha256:a5a4c83b773aca8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02"
-    } catch {
-        Write-Host "获取镜像信息时出错: $($_.Exception.Message)，使用默认版本..." -ForegroundColor Red
-        return "sha256:a5a4c83b773aca8ba99cf155f09afa33946c0aa5cc6a9ccb6162738b5da02"
-    }
+    Write-Host "使用固定版本的openclaw镜像: $fixedImageTag" -ForegroundColor Cyan
+    return $fixedDigest
 }
 
 # 更新文件中的镜像digest
@@ -194,28 +180,44 @@ function Rebuild-DockerServices {
         # 停止并移除旧容器
         Write-Host "停止并移除旧容器..." -ForegroundColor Cyan
         & docker compose down
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "停止旧容器失败，退出脚本" -ForegroundColor Red
+            Set-Location ..\.. -ErrorAction SilentlyContinue
+            exit 1
+        }
         
-        # 确保使用最新版本的镜像
-        Write-Host "确保使用最新版本的镜像..." -ForegroundColor Cyan
-        & docker pull ghcr.io/openclaw/openclaw:latest
+        # 确保使用固定版本的镜像
+        Write-Host "确保使用固定版本的镜像..." -ForegroundColor Cyan
+        & docker pull $fixedImageTag
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "拉取固定版本镜像失败，退出脚本" -ForegroundColor Red
+            Set-Location ..\.. -ErrorAction SilentlyContinue
+            exit 1
+        }
         
         # 构建并启动新容器
         Write-Host "构建并启动新容器..." -ForegroundColor Cyan
         & docker compose up -d --build
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "构建容器失败，退出脚本" -ForegroundColor Red
+            Set-Location ..\.. -ErrorAction SilentlyContinue
+            exit 1
+        }
         
         # 切换回项目根目录
         Set-Location ..\..
         
-        Write-Host "Docker服务重新构建成功，使用的是最新版本的镜像" -ForegroundColor Green
+        Write-Host "Docker服务重新构建成功，使用的是固定版本的镜像: $fixedImageTag" -ForegroundColor Green
     } catch {
         Write-Host "重新构建Docker服务时出错: $($_.Exception.Message)" -ForegroundColor Red
         # 确保切换回项目根目录
         Set-Location ..\.. -ErrorAction SilentlyContinue
+        exit 1
     }
 }
 
-# 直接拉取最新镜像并构建服务
-# 获取最新版本的镜像digest
+# 直接拉取固定版本镜像并构建服务
+# 获取固定版本的镜像digest
 $imageDigest = Get-LatestOpenClawDigest
 
 # 定义尝试次数
@@ -223,15 +225,15 @@ $maxAttempts = 4
 
 # 尝试使用原始源下载
 $downloadSuccess = $false
-Write-Host "尝试使用原始源下载..." -ForegroundColor Cyan
+Write-Host "尝试下载固定版本的openclaw镜像..." -ForegroundColor Cyan
 
 for ($i = 1; $i -le $maxAttempts; $i++) {
     Write-Host "尝试次数: $i/$maxAttempts" -ForegroundColor Cyan
     $startTime = Get-Date
     Write-Host "开始时间: $startTime" -ForegroundColor Cyan
     
-    # 直接执行docker pull命令
-    & docker pull ghcr.io/openclaw/openclaw:latest 2>&1
+    # 直接执行docker pull命令，使用固定版本
+    & docker pull $fixedImageTag 2>&1
     
     # 检查命令执行结果
     if ($LASTEXITCODE -eq 0) {
