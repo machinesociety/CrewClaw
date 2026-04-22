@@ -129,7 +129,7 @@ def _to_admin_invitation_item(row: InvitationModel) -> AdminInvitationItem:
         consumedAt=row.consumed_at.replace(tzinfo=timezone.utc).isoformat() if row.consumed_at else None,
         consumedByUserId=row.consumed_by_user_id,
         lastError=None,
-        createdAt=None,
+        createdAt=row.created_at.replace(tzinfo=timezone.utc).isoformat() if hasattr(row, 'created_at') else None,
     )
 
 

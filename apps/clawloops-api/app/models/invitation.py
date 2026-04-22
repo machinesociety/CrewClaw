@@ -28,4 +28,6 @@ class InvitationModel(Base):
 
     consumed_by_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
