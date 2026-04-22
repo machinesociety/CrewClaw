@@ -54,12 +54,14 @@ function FileBrowserContent() {
   const [isUploading, setIsUploading] = useState(false);
 
   const loadFiles = useCallback(async (path: string) => {
+    console.log('Loading files for path:', path);
     setLoading(true);
     setError(null);
     try {
       const res = await fetch(`/api/v1/files/list?path=${encodeURIComponent(path)}`, {
         credentials: 'include',
       });
+      console.log('Files list response status:', res.status);
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
         if (errorData.detail && errorData.detail.includes('No container available')) {
@@ -68,11 +70,15 @@ function FileBrowserContent() {
         throw new Error('Failed to load files');
       }
       const data = await res.json();
+      console.log('Files list response data:', data);
       setFiles(data.files || []);
+      console.log('Updated files state:', data.files || []);
     } catch (e) {
       setError(e instanceof Error ? e.message : '加载文件失败');
+      console.error('Error loading files:', e);
     } finally {
       setLoading(false);
+      console.log('File loading completed');
     }
   }, []);
 
@@ -162,7 +168,9 @@ function FileBrowserContent() {
     setIsUploading(true);
     try {
       let hasSuccess = false;
+      let hasUploadAttempt = false;
       for (const file of uploadFiles) {
+        hasUploadAttempt = true;
         // 检查当前目录中是否已存在同名文件
         const hasSameName = files.some(f => f.name === file.name);
         if (hasSameName) {
@@ -191,14 +199,18 @@ function FileBrowserContent() {
         }
         hasSuccess = true;
       }
-      if (hasSuccess) {
-        toast.success('文件上传成功');
+      if (hasUploadAttempt) {
         loadFiles(currentPath);
+        if (hasSuccess) {
+          toast.success('文件上传成功');
+        }
       }
     } catch (e) {
       toast.error('文件上传失败');
     } finally {
       setIsUploading(false);
+      // 重置文件输入框，允许重新选择相同的文件
+      event.target.value = '';
     }
   };
 
