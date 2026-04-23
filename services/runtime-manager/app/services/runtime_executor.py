@@ -90,20 +90,26 @@ class RuntimeExecutor:
         runtime_id: str,
         route_path_prefix: str,
     ) -> dict[str, str]:
-        router_name = self._router_name(runtime_id)
+        router_name = self._router_name(runtime_id) 
         middleware_name = self._middleware_name(runtime_id)
         public_host = self._public_host()
         normalized_prefix = route_path_prefix.rstrip("/")
+        safe_runtime_id = self._safe_runtime_id(runtime_id)
+        alt_prefix = normalized_prefix
+        if normalized_prefix.endswith(f"/{runtime_id}"):
+            alt_prefix = normalized_prefix[: -len(runtime_id)] + safe_runtime_id
         merged = dict(labels)
         merged["clawloops.routePathPrefix"] = normalized_prefix
         merged["traefik.enable"] = "true"
         merged[f"traefik.http.routers.{router_name}.rule"] = (
-            f"Host(`{public_host}`) && PathPrefix(`{normalized_prefix}`)"
+            f"(Host(`{public_host}`) || HostRegexp(`{{host:[0-9.]+}}`)) && (PathPrefix(`{normalized_prefix}`) || PathPrefix(`{alt_prefix}`))"
         )
         merged[f"traefik.http.routers.{router_name}.entrypoints"] = "web"
         merged[f"traefik.http.routers.{router_name}.priority"] = "200"
         merged[f"traefik.http.routers.{router_name}.middlewares"] = middleware_name
-        merged[f"traefik.http.middlewares.{middleware_name}.stripprefix.prefixes"] = normalized_prefix
+        merged[f"traefik.http.middlewares.{middleware_name}.stripprefix.prefixes"] = (
+            normalized_prefix if alt_prefix == normalized_prefix else f"{normalized_prefix},{alt_prefix}"
+        )
         merged[f"traefik.http.services.{router_name}.loadbalancer.server.port"] = "18789"
         return merged
 
