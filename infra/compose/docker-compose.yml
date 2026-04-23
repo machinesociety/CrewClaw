@@ -98,10 +98,11 @@ services:
       # - traefik.http.routers.runtime_manager.rule=Host(`${RUNTIME_MANAGER_DOMAIN}`)
       - traefik.http.routers.runtime_manager.rule=Host(`${CLAWLOOPS_DOMAIN}`) && PathPrefix(`/runtime-manager`)
       - traefik.http.routers.runtime_manager.entrypoints=web
-      - traefik.http.routers.runtime_manager.priority=90
+      - traefik.http.routers.runtime_manager.priority=100
       - traefik.http.middlewares.runtime_manager_strip.stripprefix.prefixes=/runtime-manager
       - traefik.http.routers.runtime_manager.middlewares=runtime_manager_strip
       - traefik.http.services.runtime_manager.loadbalancer.server.port=18080
+
     networks:
       - clawloops_shared
 

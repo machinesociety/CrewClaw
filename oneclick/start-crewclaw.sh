@@ -72,34 +72,94 @@ require_cmd() {
   fi
 }
 
+# sudo_ok() {
+#   if [[ "$(id -u)" -eq 0 ]]; then
+#     return 0
+#   fi
+#   if ! need_cmd sudo; then
+#     return 1
+#   fi
+#   sudo -n true >/dev/null 2>&1
+# }
+
+# init_docker_cmd() {
+#   if docker info >/dev/null 2>&1; then
+#     DOCKER_CMD=(docker)
+#     return 0
+#   fi
+
+#   if sudo_ok && sudo docker info >/dev/null 2>&1; then
+#     DOCKER_CMD=(sudo docker)
+#     return 0
+#   fi
+
+#   echo "Docker daemon 当前不可用。"
+#   echo "请先确认 Docker 已安装并启动，且当前用户可执行 'docker info'，或允许 sudo 执行 Docker。"
+#   echo "常见排查："
+#   echo "  - 启动服务：sudo systemctl start docker"
+#   echo "  - 加入 docker 组后重新登录：sudo usermod -aG docker \$USER"
+#   exit 1
+# }
+
 sudo_ok() {
+  # 1. 如果已经是 root，直接 OK
   if [[ "$(id -u)" -eq 0 ]]; then
     return 0
   fi
+  
+  # 2. 检查是否有 sudo 命令
   if ! need_cmd sudo; then
     return 1
   fi
-  sudo -n true >/dev/null 2>&1
+
+  # 3. 关键点：使用 -n (non-interactive) 模式测试 sudo
+  # 如果不需要密码就能执行，则返回 0
+  if sudo -n true >/dev/null 2>&1; then
+    return 0
+  fi
+
+  # 4. 如果是在 CI 等非交互环境下，且 sudo 需要密码，直接返回失败，不再尝试触发交互
+  if [[ "$NON_INTERACTIVE" == "true" ]] || [[ ! -t 0 ]]; then
+    return 1
+  fi
+
+  # 5. 只有在交互模式下才允许 sudo 尝试请求密码
+  sudo true >/dev/null 2>&1
 }
 
 init_docker_cmd() {
+  # 尝试 1: 直接运行 docker
   if docker info >/dev/null 2>&1; then
     DOCKER_CMD=(docker)
     return 0
   fi
 
-  if sudo_ok && sudo docker info >/dev/null 2>&1; then
-    DOCKER_CMD=(sudo docker)
-    return 0
+  # 尝试 2: 如果直接运行失败，检测当前用户是否在 docker 组但未生效
+  if groups | grep -q "\bdocker\b"; then
+    echo "警告：当前用户已在 docker 组，但权限未生效。尝试使用 newgrp 运行可能失败，建议重启服务或重新登录。"
   fi
 
-  echo "Docker daemon 当前不可用。"
-  echo "请先确认 Docker 已安装并启动，且当前用户可执行 'docker info'，或允许 sudo 执行 Docker。"
-  echo "常见排查："
-  echo "  - 启动服务：sudo systemctl start docker"
-  echo "  - 加入 docker 组后重新登录：sudo usermod -aG docker \$USER"
+  # 尝试 3: 检查是否可以用免密 sudo 运行
+  if sudo_ok; then
+    if sudo docker info >/dev/null 2>&1; then
+      DOCKER_CMD=(sudo docker)
+      return 0
+    fi
+  fi
+
+  # 自动解决尝试：如果是 CI 环境且失败了，给出针对 GitLab Runner 的修复建议
+  echo "----------------------------------------------------"
+  echo "错误：Docker 权限不足或服务未启动。"
+  if [[ ! -t 0 ]]; then
+     echo "检测到正在非交互（CI/CD）环境下运行。"
+     echo "请在宿主机执行以下命令修复权限："
+     echo "  sudo usermod -aG docker gitlab-runner && sudo systemctl restart gitlab-runner"
+     echo "或者配置免密 sudo: 'gitlab-runner ALL=(ALL) NOPASSWD: ALL' 写入 /etc/sudoers"
+  fi
+  echo "----------------------------------------------------"
   exit 1
 }
+
 
 ensure_compose_available() {
   if ! "${DOCKER_CMD[@]}" compose version >/dev/null 2>&1; then

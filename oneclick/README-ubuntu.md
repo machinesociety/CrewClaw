@@ -41,6 +41,17 @@ sudo systemctl restart docker
 curl -fsSL https://get.docker.com | bash -s docker --mirror Aliyun
 ```
 
+
+## 如果涉及到 GitLab Runner 权限问题（配置非root用户权限）：
+```bash
+sudo usermod -aG docker $USER
+newgrp docker  # 立即生效（或重新登录）
+```
+为了保证你的 ClawLoops 一键启动脚本在 GitLab 之后能跑通，我建议你在修改完脚本后，依然要在虚拟机执行一次：
+```bash
+sudo usermod -aG docker gitlab-runner
+```
+
 ## 做完上述操作后，即可执行下面A或B方式的一键启动命令，国内一般第一次下载配置等执行会很慢！
 
 ### 方式 A：在仓库根目录执行（推荐），其中 /path/to/CrewClaw 表示你的仓库根目录路径。
