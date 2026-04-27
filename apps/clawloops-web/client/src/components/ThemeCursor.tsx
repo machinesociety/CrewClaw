@@ -1,37 +1,42 @@
 import { useEffect, useState } from 'react';
 
 export default function ThemeCursor() {
-  const [mounted, setMounted] = useState(false);
-  const [point, setPoint] = useState({ x: 0, y: 0 });
+  const [point, setPoint] = useState({ x: -100, y: -100 });
   const [down, setDown] = useState(false);
+  const [enabled, setEnabled] = useState(false);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia('(pointer: fine)').matches) {
-      return;
-    }
-    setMounted(true);
+    const media = window.matchMedia('(pointer:fine)');
+    const sync = () => setEnabled(media.matches);
+    sync();
+    media.addEventListener('change', sync);
+    return () => media.removeEventListener('change', sync);
+  }, []);
 
-    const onMove = (event: MouseEvent) => setPoint({ x: event.clientX, y: event.clientY });
+  useEffect(() => {
+    if (!enabled) return;
+    const onMove = (e: MouseEvent) => setPoint({ x: e.clientX, y: e.clientY });
     const onDown = () => setDown(true);
     const onUp = () => setDown(false);
-
-    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mousemove', onMove, { passive: true });
     window.addEventListener('mousedown', onDown);
     window.addEventListener('mouseup', onUp);
-
     return () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mousedown', onDown);
       window.removeEventListener('mouseup', onUp);
     };
-  }, []);
+  }, [enabled]);
 
-  if (!mounted) return null;
+  if (!enabled) return null;
 
   return (
     <div
+      aria-hidden="true"
       className={`theme-cursor ${down ? 'is-down' : ''}`}
-      style={{ transform: `translate(${point.x - 8}px, ${point.y - 8}px)` }}
+      style={{
+        transform: `translate(${point.x}px, ${point.y}px) translate(-50%, -50%)`,
+      }}
     />
   );
 }

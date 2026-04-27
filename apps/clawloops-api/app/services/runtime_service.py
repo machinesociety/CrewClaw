@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Optional
 
@@ -27,6 +28,7 @@ class RuntimeService:
         runtime_manager: RuntimeManagerPort,
         task_repo: RuntimeTaskRepository,
         config_renderer: RuntimeConfigRenderer,
+        runtime_route_prefix: str = "/runtime",
         route_host_suffix: str = "clawloops.example.com",
     ) -> None:
         self._binding_service = binding_service
@@ -34,7 +36,16 @@ class RuntimeService:
         self._runtime_manager = runtime_manager
         self._task_repo = task_repo
         self._config_renderer = config_renderer
+        self._runtime_route_prefix = self._normalize_runtime_route_prefix(runtime_route_prefix)
         self._route_host_suffix = route_host_suffix
+
+    @staticmethod
+    def _normalize_runtime_route_prefix(prefix: str) -> str:
+        normalized = (prefix or "/runtime").strip()
+        if not normalized.startswith("/"):
+            normalized = f"/{normalized}"
+        normalized = normalized.rstrip("/")
+        return normalized or "/runtime"
 
     def _new_task(self, user_id: str, runtime_id: str, action: RuntimeAction) -> RuntimeTask:
         task = RuntimeTask(
@@ -51,17 +62,14 @@ class RuntimeService:
     def _route_host_for_user(self, user_id: str) -> str:
         return f"u-{user_id}.{self._route_host_suffix}"
 
+    def _route_path_prefix_for_runtime(self, runtime_id: str) -> str:
+        return f"{self._runtime_route_prefix}/{runtime_id}"
+
     def ensure_running(self, user_id: str) -> RuntimeTask:
         """
         创建或启动 runtime，并回写 binding 状态。
         """
         binding = self._binding_service.ensure_binding(user_id)
-        
-        active_tasks = self._task_repo.get_active_tasks_for_user(user_id, binding.runtimeId)
-        if active_tasks:
-            task = active_tasks[0]
-            raise RuntimeError(f"已有{task.action.value}任务正在进行中，请稍后再试")
-        
         task = self._new_task(user_id, binding.runtimeId, RuntimeAction.ENSURE_RUNNING)
         task.start()
         self._task_repo.save(task)
@@ -71,10 +79,13 @@ class RuntimeService:
             openclaw_json, config_version = self._config_renderer.render(user_id, binding, model_config)
 
             route_host = self._route_host_for_user(user_id)
+            route_path_prefix = self._route_path_prefix_for_runtime(binding.runtimeId)
             payload = {
                 "userId": user_id,
                 "runtimeId": binding.runtimeId,
                 "volumeId": binding.volumeId,
+                "routePathPrefix": route_path_prefix,
+                # Backward-compat key for older runtime-manager contracts.
                 "routeHost": route_host,
                 "retentionPolicy": binding.retentionPolicy.value,
                 "compat": {
@@ -132,12 +143,6 @@ class RuntimeService:
         幂等停止 runtime。
         """
         binding = self._binding_service.ensure_binding(user_id)
-        
-        active_tasks = self._task_repo.get_active_tasks_for_user(user_id, binding.runtimeId)
-        if active_tasks:
-            task = active_tasks[0]
-            raise RuntimeError(f"已有{task.action.value}任务正在进行中，请稍后再试")
-            
         task = self._new_task(user_id, binding.runtimeId, RuntimeAction.STOP)
         task.start()
         self._task_repo.save(task)
@@ -175,12 +180,6 @@ class RuntimeService:
         删除 runtime，并按 retentionPolicy 更新 binding。
         """
         binding = self._binding_service.ensure_binding(user_id)
-        
-        active_tasks = self._task_repo.get_active_tasks_for_user(user_id, binding.runtimeId)
-        if active_tasks:
-            task = active_tasks[0]
-            raise RuntimeError(f"已有{task.action.value}任务正在进行中，请稍后再试")
-            
         effective_policy = retention_policy or binding.retentionPolicy.value
         task = self._new_task(user_id, binding.runtimeId, RuntimeAction.DELETE)
         task.start()
@@ -230,6 +229,43 @@ class RuntimeService:
         """
         return self._binding_service.ensure_binding(user_id)
 
+    def hot_reload_openclaw_config(self, user_id: str) -> bool:
+        """
+        不重启 Runtime，直接将最新模型配置热写入运行中容器的 openclaw.json。
+        成功返回 True，失败或容器未运行返回 False。
+        """
+        binding = self._binding_service.ensure_binding(user_id)
+        if binding.observedState != ObservedState.running:
+            return False
+
+        model_config = self._model_config_service.get_user_model_config(user_id)
+        openclaw_json, _ = self._config_renderer.render(user_id, binding, model_config)
+        try:
+            self._runtime_manager.write_file(
+                runtime_id=binding.runtimeId,
+                path="/home/node/.openclaw/openclaw.json",
+                content=json.dumps(openclaw_json, ensure_ascii=False, indent=2),
+            )
+            # OpenClaw runtime reads config from workspace mount fallback path as well.
+            self._runtime_manager.write_file(
+                runtime_id=binding.runtimeId,
+                path="/home/node/.openclaw/workspace/openclaw.json",
+                content=json.dumps(openclaw_json, ensure_ascii=False, indent=2),
+            )
+            return True
+        except Exception:
+            return False
+
+    def restart_runtime(self, user_id: str) -> bool:
+        binding = self._binding_service.ensure_binding(user_id)
+        if binding.observedState != ObservedState.running:
+            return False
+        try:
+            self._runtime_manager.restart(binding.runtimeId)
+            return True
+        except Exception:
+            return False
+
     def list_files(self, runtime_id: str, path: str) -> list[dict]:
         """
         列出容器内的文件
@@ -258,15 +294,6 @@ class InMemoryRuntimeTaskRepository(RuntimeTaskRepository):
 
     def get(self, task_id: str) -> RuntimeTask | None:
         return self._tasks.get(task_id)
-        
-    def get_active_tasks_for_user(self, user_id: str, runtime_id: str) -> list[RuntimeTask]:
-        from app.domain.runtime import TaskStatus
-        return [
-            task for task in self._tasks.values()
-            if task.user_id == user_id 
-            and task.runtime_id == runtime_id 
-            and task.status in [TaskStatus.PENDING, TaskStatus.RUNNING]
-        ]
 
 
 class UserRuntimeBindingServiceAdapter(UserRuntimeBindingServicePort):
@@ -343,6 +370,9 @@ class RuntimeManagerPortAdapter(RuntimeManagerPort):
             compat=compat,
         )
 
+    def restart(self, runtime_id: str) -> dict:
+        return self._client.restart(runtime_id=runtime_id)
+
     def list_files(self, runtime_id: str, path: str) -> list[dict]:
         return self._client.list_files(runtime_id=runtime_id, path=path)
 
@@ -351,4 +381,3 @@ class RuntimeManagerPortAdapter(RuntimeManagerPort):
 
     def write_file(self, runtime_id: str, path: str, content: str | bytes) -> None:
         self._client.write_file(runtime_id=runtime_id, path=path, content=content)
-

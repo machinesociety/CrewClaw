@@ -8,6 +8,7 @@ from pathlib import Path
 
 from app.core.errors import RuntimeManagerError
 from app.core.settings import get_settings
+from app.services.skill_paths import public_files_dir, public_root_dir, runtime_public_copy_dir
 
 
 @dataclass(frozen=True)
@@ -82,7 +83,26 @@ def resolve_public_root(user_id: str | None = None) -> Path:
     if user_id:
         return runtime_public_copy_dir(user_id)
     _migrate_legacy_public_root()
+    _migrate_legacy_public_files_dir()
     return public_root_dir()
+
+def _migrate_legacy_public_files_dir() -> None:
+    root = public_root_dir()
+    legacy = root / "files"
+    if not legacy.exists() or not legacy.is_dir():
+        return
+    root.mkdir(parents=True, exist_ok=True)
+    for item in legacy.iterdir():
+        target = root / item.name
+        if target.exists():
+            continue
+        if item.is_dir():
+            shutil.move(str(item), str(target))
+        else:
+            shutil.move(str(item), str(target))
+    if legacy.exists():
+        shutil.rmtree(legacy)
+>>>>>>> origin/qsh774
 
 
 def _sorted_dir_entries(target: Path) -> list[PublicEntry]:

@@ -97,6 +97,13 @@ class RuntimeManagerClient:
             payload,
         )
 
+    def restart(self, runtime_id: str) -> Any:
+        return self._request(
+            "POST",
+            "/internal/runtime-manager/containers/restart",
+            {"runtimeId": runtime_id},
+        )
+
     def get_container(self, runtime_id: str) -> dict[str, Any]:
         return self._request("GET", f"/internal/runtime-manager/containers/{runtime_id}")
 
@@ -127,6 +134,53 @@ class RuntimeManagerClient:
             "isBinary": is_binary
         })
 
+    def write_runtime_openclaw_config(self, runtime_id: str, openclaw_json: dict[str, Any]) -> None:
+        import json
+
+        payload = json.dumps(openclaw_json, ensure_ascii=False, indent=2)
+        self.write_file(runtime_id=runtime_id, path="/home/node/.openclaw/openclaw.json", content=payload)
+
+    def list_skills(self, scope: str, user_id: str | None = None) -> list[dict[str, Any]]:
+        query = f"/internal/runtime-manager/skills/list?scope={scope}"
+        if user_id is not None:
+            query += f"&userId={user_id}"
+        result = self._request("GET", query)
+        files = result.get("files", [])
+        return files if isinstance(files, list) else []
+
+    def upload_skill(
+        self,
+        scope: str,
+        content: bytes,
+        filename: str,
+        user_id: str | None = None,
+        name: str | None = None,
+        overwrite: bool | None = None,
+    ) -> dict[str, Any]:
+        data: dict[str, Any] = {"scope": scope}
+        if user_id is not None:
+            data["userId"] = user_id
+        if name is not None:
+            data["name"] = name
+        if overwrite is not None:
+            data["overwrite"] = str(bool(overwrite)).lower()
+        return self._request_multipart(
+            "/internal/runtime-manager/skills/upload",
+            data=data,
+            files={"file": (filename, content, "application/octet-stream")},
+        )
+
+    def download_skill(self, scope: str, name: str, user_id: str | None = None) -> tuple[bytes, dict[str, str]]:
+        query = f"/internal/runtime-manager/skills/download?scope={scope}&name={name}"
+        if user_id is not None:
+            query += f"&userId={user_id}"
+        return self._request_bytes("GET", query)
+
+    def delete_skill(self, scope: str, name: str, user_id: str | None = None) -> None:
+        query = f"/internal/runtime-manager/skills/delete?scope={scope}&name={name}"
+        if user_id is not None:
+            query += f"&userId={user_id}"
+        self._request("DELETE", query)
     def list_public_entries(
         self,
         path: str = "",
@@ -175,4 +229,3 @@ class RuntimeManagerClient:
         if user_id:
             data["userId"] = user_id
         self._request_form("/internal/runtime-manager/public/files/mkdir", data=data)
-

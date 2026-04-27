@@ -18,6 +18,7 @@ async def list_models(
     model_repo: ModelRepository = Depends(get_model_repository),
 ) -> ModelListResponse:
     model_base_url = settings.model_gateway_base_url or "http://litellm:4000"
+    # 用户可见模型集合以平台治理为准，然后与网关真实可用模型取交集
     service = ModelService(model_repo=model_repo)
     governed = service.filter_models_by_provider_readiness(
         service.list_models_for_user(ctx.userId),

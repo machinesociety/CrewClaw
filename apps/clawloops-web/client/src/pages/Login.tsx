@@ -160,6 +160,7 @@ function LoginForm() {
             </div>
           </div>
           <div className="h-full flex items-end justify-center relative pb-12">
+            {/* 增加一个发光底座效果 */}
             <div className="absolute bottom-[72px] left-1/2 -translate-x-1/2 w-[380px] h-[40px] bg-primary/10 blur-[40px] rounded-[100%] pointer-events-none" />
             <AnimatedLoginArt mode={artMode} pointer={pointer} />
           </div>
@@ -225,6 +226,15 @@ function LoginForm() {
                       y: (e.clientY - rect.top) / Math.max(rect.height, 1),
                     });
                   }}
+                  onFocus={() => setActiveField('username')}
+                  onBlur={() => setActiveField(null)}
+                  onMouseMove={e => {
+                    const rect = (e.currentTarget as HTMLInputElement).getBoundingClientRect();
+                    setPointer({
+                      x: (e.clientX - rect.left) / Math.max(rect.width, 1),
+                      y: (e.clientY - rect.top) / Math.max(rect.height, 1),
+                    });
+                  }}
                   className={`pl-10 bg-background/50 border-border/60 focus:border-primary/60 transition-colors ${
                     formErrors.username ? 'border-destructive' : ''
                   }`}
@@ -252,6 +262,15 @@ function LoginForm() {
                   onFocus={() => setActiveField('password')}
                   onBlur={() => setActiveField(null)}
                   onMouseMove={(e) => {
+                    const rect = (e.currentTarget as HTMLInputElement).getBoundingClientRect();
+                    setPointer({
+                      x: (e.clientX - rect.left) / Math.max(rect.width, 1),
+                      y: (e.clientY - rect.top) / Math.max(rect.height, 1),
+                    });
+                  }}
+                  onFocus={() => setActiveField('password')}
+                  onBlur={() => setActiveField(null)}
+                  onMouseMove={e => {
                     const rect = (e.currentTarget as HTMLInputElement).getBoundingClientRect();
                     setPointer({
                       x: (e.clientX - rect.left) / Math.max(rect.width, 1),

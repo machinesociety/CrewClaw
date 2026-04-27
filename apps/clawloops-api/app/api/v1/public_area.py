@@ -42,13 +42,14 @@ async def upload_public_file(
     content = await file.read()
     use_global = _use_global_scope(ctx, scope)
     allow_overwrite = bool(overwrite) if not use_global else bool(overwrite) and bool(ctx.isAdmin)
-    return rm.upload_public_file(
+    result = rm.upload_public_file(
         path=path,
         content=content,
         filename=file.filename or "file",
         overwrite=allow_overwrite,
         user_id=None if use_global else ctx.userId,
     )
+    return result
 
 
 @router.post("/files/mkdir")

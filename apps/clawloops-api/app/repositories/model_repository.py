@@ -4,7 +4,7 @@ from typing import Protocol
 
 from sqlalchemy.orm import Session
 
-from app.domain.credentials import ProviderCredential
+from app.domain.credentials import ProviderCredential, ProviderCredentialStatus
 from app.domain.models import Model, ModelSource, PricingType, UsageSummary
 from app.models.model_catalog import GovernedModelCatalogModel
 
@@ -100,6 +100,7 @@ def build_default_governed_models() -> list[Model]:
 
 class InMemoryModelRepository:
     def __init__(self) -> None:
+        # model_id 必须与 LiteLLM model_list.model_name 一致，便于与网关 /v1/models 取交集。
         self._models: dict[str, Model] = {
             model.model_id: model for model in build_default_governed_models()
         }
@@ -112,6 +113,47 @@ class InMemoryModelRepository:
 
     def save(self, model: Model) -> None:
         self._models[model.model_id] = model
+
+
+def build_default_governed_models() -> list[Model]:
+    return [
+        Model(
+            model_id="ollama-qwen2.5-7b-free",
+            name="Qwen 2.5 7B（免费）",
+            provider="ollama",
+            source=ModelSource.SHARED,
+            pricing_type=PricingType.FREE,
+            enabled=True,
+            user_visible=True,
+            default_route="ollama/qwen2.5:7b",
+            default_provider_credential_id=None,
+            upstream_model_id="qwen2.5:7b",
+        ),
+        Model(
+            model_id="qwen-max-proxy",
+            name="通义 Qwen Max（免费）",
+            provider="dashscope",
+            source=ModelSource.SHARED,
+            pricing_type=PricingType.FREE,
+            enabled=True,
+            user_visible=True,
+            default_route="litellm/qwen-max-proxy",
+            default_provider_credential_id=None,
+            upstream_model_id="dashscope/qwen3.5-plus",
+        ),
+        Model(
+            model_id="gpt-4-mini-paid",
+            name="GPT-4 Mini",
+            provider="openrouter",
+            source=ModelSource.SHARED,
+            pricing_type=PricingType.PAID,
+            enabled=True,
+            user_visible=True,
+            default_route="openrouter/openai/gpt-4o-mini",
+            default_provider_credential_id=None,
+            upstream_model_id="openai/gpt-4o-mini",
+        ),
+    ]
 
 
 class SqlAlchemyModelRepository:
@@ -267,5 +309,3 @@ def reset_inmemory_model_repositories() -> None:
     _model_repo_singleton = None
     _provider_credential_repo_singleton = None
     _usage_repo_singleton = None
-
-

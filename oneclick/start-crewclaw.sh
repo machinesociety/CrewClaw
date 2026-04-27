@@ -7,10 +7,10 @@ DEFAULT_REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 NON_INTERACTIVE=false
 SET_PUBLIC_BASE_URL_MODE=""
 REPO_DIR="$DEFAULT_REPO_DIR"
-DOCKER_CMD=(docker)
 
+DOCKER_CMD=(docker)
 usage() {
-  echo "用法：0 [--non-interactive] [--set-public-base-url auto-ip] [repo_dir]"
+  echo "用法：$0 [--non-interactive] [--set-public-base-url auto-ip] [repo_dir]"
 }
 
 parse_args() {
@@ -35,7 +35,7 @@ parse_args() {
         exit 0
         ;;
       --*)
-        echo "未知错误：$1"
+        echo "未知参数：$1"
         usage
         exit 1
         ;;
@@ -56,7 +56,7 @@ parse_args() {
   fi
 
   if [[ -n "$SET_PUBLIC_BASE_URL_MODE" && "$SET_PUBLIC_BASE_URL_MODE" != "auto-ip" ]]; then
-    echo "参数错误：--set-public-base-url 参数只能是 auto-ip"
+    echo "不支持的 --set-public-base-url 模式：$SET_PUBLIC_BASE_URL_MODE（仅支持 auto-ip）"
     exit 1
   fi
 }
@@ -67,48 +67,105 @@ require_cmd() {
   local cmd="$1"
   local hint="$2"
   if ! need_cmd "$cmd"; then
-    echo "命令不存在：$cmd"
+    echo "缺少命令：$cmd"
     echo "$hint"
     exit 1
   fi
 }
 
+# sudo_ok() {
+#   if [[ "$(id -u)" -eq 0 ]]; then
+#     return 0
+#   fi
+#   if ! need_cmd sudo; then
+#     return 1
+#   fi
+#   sudo -n true >/dev/null 2>&1
+# }
+
+# init_docker_cmd() {
+#   if docker info >/dev/null 2>&1; then
+#     DOCKER_CMD=(docker)
+#     return 0
+#   fi
+
+#   if sudo_ok && sudo docker info >/dev/null 2>&1; then
+#     DOCKER_CMD=(sudo docker)
+#     return 0
+#   fi
+
+#   echo "Docker daemon 当前不可用。"
+#   echo "请先确认 Docker 已安装并启动，且当前用户可执行 'docker info'，或允许 sudo 执行 Docker。"
+#   echo "常见排查："
+#   echo "  - 启动服务：sudo systemctl start docker"
+#   echo "  - 加入 docker 组后重新登录：sudo usermod -aG docker \$USER"
+#   exit 1
+# }
+
 sudo_ok() {
+  # 1. 如果已经是 root，直接 OK
   if [[ "$(id -u)" -eq 0 ]]; then
     return 0
   fi
+  
+  # 2. 检查是否有 sudo 命令
   if ! need_cmd sudo; then
     return 1
   fi
-  sudo -n true >/dev/null 2>&1
+
+  # 3. 关键点：使用 -n (non-interactive) 模式测试 sudo
+  # 如果不需要密码就能执行，则返回 0
+  if sudo -n true >/dev/null 2>&1; then
+    return 0
+  fi
+
+  # 4. 如果是在 CI 等非交互环境下，且 sudo 需要密码，直接返回失败，不再尝试触发交互
+  if [[ "$NON_INTERACTIVE" == "true" ]] || [[ ! -t 0 ]]; then
+    return 1
+  fi
+
+  # 5. 只有在交互模式下才允许 sudo 尝试请求密码
+  sudo true >/dev/null 2>&1
 }
 
 init_docker_cmd() {
+  # 尝试 1: 直接运行 docker
   if docker info >/dev/null 2>&1; then
     DOCKER_CMD=(docker)
     return 0
   fi
 
-  if sudo_ok && sudo docker info >/dev/null 2>&1; then
-    DOCKER_CMD=(sudo docker)
-    return 0
+  # 尝试 2: 如果直接运行失败，检测当前用户是否在 docker 组但未生效
+  if groups | grep -q "\bdocker\b"; then
+    echo "警告：当前用户已在 docker 组，但权限未生效。尝试使用 newgrp 运行可能失败，建议重启服务或重新登录。"
   fi
 
-  echo "Docker daemon 未运行"
-  echo "请检查 Docker 客户端是否已安装，需要 sudo 权限"
-  echo "请执行以下命令："
-  echo "  - sudo systemctl start docker"
-  echo "  - sudo usermod -aG docker \$USER"
+  # 尝试 3: 检查是否可以用免密 sudo 运行
+  if sudo_ok; then
+    if sudo docker info >/dev/null 2>&1; then
+      DOCKER_CMD=(sudo docker)
+      return 0
+    fi
+  fi
+
+  # 自动解决尝试：如果是 CI 环境且失败了，给出针对 GitLab Runner 的修复建议
+  echo "----------------------------------------------------"
+  echo "错误：Docker 权限不足或服务未启动。"
+  if [[ ! -t 0 ]]; then
+     echo "检测到正在非交互（CI/CD）环境下运行。"
+     echo "请在宿主机执行以下命令修复权限："
+     echo "  sudo usermod -aG docker gitlab-runner && sudo systemctl restart gitlab-runner"
+     echo "或者配置免密 sudo: 'gitlab-runner ALL=(ALL) NOPASSWD: ALL' 写入 /etc/sudoers"
+  fi
+  echo "----------------------------------------------------"
   exit 1
 }
 
+
 ensure_compose_available() {
   if ! "${DOCKER_CMD[@]}" compose version >/dev/null 2>&1; then
-    echo "Docker Compose 未安装"
-    echo "请检查 Docker 客户端是否已安装，需要 sudo 权限"
-    echo "请执行以下命令："
-    echo "  - sudo systemctl start docker"
-    echo "  - sudo usermod -aG docker \$USER"
+    echo "当前 Docker 缺少 'docker compose' 插件。"
+    echo "请按你的发行版安装 Docker Compose plugin 后重试。"
     exit 1
   fi
 }
@@ -123,12 +180,12 @@ ensure_env_file() {
   fi
 
   if [[ ! -f "$example" ]]; then
-    echo "文件不存在：$example"
+    echo "缺少 $env_file，且找不到模板文件 $example"
     exit 1
   fi
 
   cp "$example" "$env_file"
-  echo "已创建文件：$env_file"
+  echo "已创建默认配置：$env_file"
 }
 
 read_env_value() {
@@ -188,9 +245,10 @@ collect_ip_candidates() {
 
 suggest_runtime_public_base_url() {
   local suggestion current_value current_domain current_runtime_manager_domain current_scheme selected_ip
+  local env_file="$REPO_DIR/infra/compose/.env"
   local -a ips=()
-  local selected_idx
-  local line
+  local selected_idx selected_ip
+  local i line
 
   while IFS= read -r line; do
     [[ -n "$line" ]] && ips+=("$line")
@@ -212,8 +270,10 @@ suggest_runtime_public_base_url() {
     upsert_env_value "RUNTIME_PUBLIC_HOST" "${ips[0]}"
     upsert_env_value "RUNTIME_BROWSER_SCHEME" "http"
     upsert_env_value "RUNTIME_PUBLIC_BASE_URL" "$suggestion"
-    echo "已设置 CLAWLOOPS_DOMAIN=${ips[0]}"
-    echo "已设置 RUNTIME_PUBLIC_BASE_URL=$suggestion"
+    echo "已按 auto-ip 更新 CLAWLOOPS_DOMAIN=clawloops.${ips[0]}"
+    echo "已按 auto-ip 更新 RUNTIME_MANAGER_DOMAIN=runtime-manager.${ips[0]}"
+    echo "已按 auto-ip 更新 RUNTIME_PUBLIC_HOST=${ips[0]}"
+    echo "已按 auto-ip 更新 RUNTIME_PUBLIC_BASE_URL=$suggestion"
     return 0
   fi
 
@@ -221,15 +281,17 @@ suggest_runtime_public_base_url() {
     return 0
   fi
 
-  echo "请选择一个 IPv4 地址："
+  echo "检测到本机可用 IPv4（按推荐顺序）："
   for i in "${!ips[@]}"; do
     printf '  %d) %s\n' "$((i + 1))" "${ips[$i]}"
   done
-  echo "当前 CLAWLOOPS_DOMAIN=${current_domain:-<鏈缃?}"
-  echo "当前 RUNTIME_MANAGER_DOMAIN=${current_runtime_manager_domain:-<鏈缃?}"
-  echo "当前 RUNTIME_BROWSER_SCHEME=${current_scheme:-<鏈缃?}"
-  echo "当前 RUNTIME_PUBLIC_BASE_URL=${current_value:-<鏈缃?}"
-  echo "建议使用 $suggestion 作为 RUNTIME_PUBLIC_BASE_URL锛岄夋嫨鍚庝細鍚屾椂鏇存NEW鍏ュ彛鍜?Runtime 鍏ュ彛锛夛細"
+  echo "当前 CLAWLOOPS_DOMAIN=${current_domain:-<未设置>}"
+  echo "当前 RUNTIME_MANAGER_DOMAIN=${current_runtime_manager_domain:-<未设置>}"
+  echo "当前 RUNTIME_BROWSER_SCHEME=${current_scheme:-<未设置>}"
+  echo "当前 RUNTIME_PUBLIC_BASE_URL=${current_value:-<未设置>}"
+  echo "建议值：$suggestion"
+  while true; do
+    echo "输入编号选择 IP（直接回车默认选择 1；选择后会同时更新主站入口和 Runtime 入口）："
     read -r selected_idx
     selected_idx="${selected_idx:-1}"
 
@@ -270,8 +332,8 @@ validate_env_file() {
   for key in "${required_keys[@]}"; do
     value="$(read_env_value "$key" || true)"
     if [[ -z "$value" ]]; then
-      echo "请设置 $key"
-      echo "请在 $env_file"
+      echo "配置缺失：$key"
+      echo "请编辑 $env_file 后重试。"
       exit 1
     fi
   done
@@ -282,11 +344,20 @@ print_access_summary() {
   clawloops_domain="$(read_env_value "CLAWLOOPS_DOMAIN")"
   runtime_manager_domain="$(read_env_value "RUNTIME_MANAGER_DOMAIN")"
   runtime_public_base_url="$(read_env_value "RUNTIME_PUBLIC_BASE_URL")"
-
-  echo "访问地址：http://${clawloops_domain}"
+  echo "启动完成。"
+  echo "主站：http://${clawloops_domain}"
   echo "Runtime Manager：http://${runtime_manager_domain}"
-  echo "OpenClaw Runtime 示例：http://${runtime_public_base_url}/runtime/<runtimeId>/chat?session=main#token=<OpenClaw token>"
+  echo "OpenClaw Runtime 示例：${runtime_public_base_url}/runtime/<runtimeId>/chat?session=main#token=<OpenClaw token>"
   echo "Traefik Dashboard：http://127.0.0.1:8080"
+  if [[ "$clawloops_domain" == *.localhost ]]; then
+    echo
+    echo "如果浏览器无法解析 .localhost，可在 hosts 中加入："
+    echo "127.0.0.1 ${clawloops_domain}"
+  elif [[ "$runtime_public_base_url" != "http://${clawloops_domain}" && "$runtime_public_base_url" != "https://${clawloops_domain}" ]]; then
+    echo
+    echo "注意：当前主站入口与 Runtime 对外入口不一致。"
+    echo "局域网访问时，通常应让 CLAWLOOPS_DOMAIN 与 RUNTIME_PUBLIC_BASE_URL 指向同一台机器。"
+  fi
 }
 
 compose_up() {
@@ -298,9 +369,9 @@ compose_up() {
 }
 
 main() {
-  require_cmd "grep" "请安装 grep"
-  require_cmd "awk" "请安装 awk"
-  require_cmd "docker" "请安装 Docker Engine"
+  require_cmd "grep" "请先安装基础文本工具（通常系统默认自带 grep）。"
+  require_cmd "awk" "请先安装 awk。"
+  require_cmd "docker" "请先安装 Docker Engine。脚本不再自动安装 Docker，以避免发行版耦合。"
 
   init_docker_cmd
   ensure_compose_available
@@ -313,8 +384,7 @@ main() {
 
 parse_args "$@"
 if [[ ! -f "$REPO_DIR/infra/compose/docker-compose.yml" ]]; then
-  echo "请在 CrewClaw 项目根目录下运行 $0"
-  echo "当前目录：$REPO_DIR"
+  echo "未找到 CrewClaw 仓库：$REPO_DIR"
   usage
   exit 1
 fi

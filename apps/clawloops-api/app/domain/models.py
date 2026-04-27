@@ -11,7 +11,6 @@ class PricingType(str, Enum):
     FREE = "free"
     PAID = "paid"
 
-
 @dataclass
 class Model:
     """
@@ -42,4 +41,3 @@ class UsageSummary:
     user_id: str
     total_tokens: int
     used_tokens: int = 0
-

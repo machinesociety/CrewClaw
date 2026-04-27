@@ -82,6 +82,9 @@ class RuntimeManagerPort(Protocol):
     ) -> dict:
         ...
 
+    def restart(self, runtime_id: str) -> dict:
+        ...
+
     def list_files(self, runtime_id: str, path: str) -> list[dict]:
         ...
 
@@ -105,4 +108,3 @@ class RuntimeTaskRepository(Protocol):
         
     def get_active_tasks_for_user(self, user_id: str, runtime_id: str) -> list[RuntimeTask]:
         ...
-

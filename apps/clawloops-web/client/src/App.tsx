@@ -40,6 +40,7 @@ import { Route, Switch, Redirect } from 'wouter';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider } from './contexts/AuthContext';
+import ThemeCursor from './components/ThemeCursor';
 
 // Public pages
 import LoginPage from './pages/Login';
@@ -135,6 +136,7 @@ function App() {
                 },
               }}
             />
+            <ThemeCursor />
             <Router />
           </TooltipProvider>
         </AuthProvider>

@@ -27,6 +27,7 @@ class AppSettings(BaseSettings):
     # 预留后续接入的外部服务配置字段
     database_url: str | None = None
     runtime_manager_base_url: str | None = None
+    runtime_route_prefix: str = "/runtime"
     route_host_suffix: str = "clawloops.localhost"
     model_gateway_base_url: str | None = None
     model_gateway_default_models: str = "qwen-max-proxy"
@@ -34,6 +35,8 @@ class AppSettings(BaseSettings):
     dashscope_api_key: str | None = Field(default=None, validation_alias="DASHSCOPE_API_KEY")
     provider_openrouter_api_key: str | None = Field(default=None, validation_alias="OPENROUTER_API_KEY")
     ollama_base_url: str | None = Field(default=None, validation_alias="OLLAMA_BASE_URL")
+
+    # OpenRouter（用于管理员同步模型目录）
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_api_key: str | None = None
 
@@ -91,4 +94,3 @@ def get_settings() -> AppSettings:
     """提供带缓存的全局配置实例，供依赖注入使用。"""
 
     return AppSettings()
-

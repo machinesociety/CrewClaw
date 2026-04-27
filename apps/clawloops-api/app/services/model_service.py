@@ -21,6 +21,14 @@ def build_openrouter_safe_model_id(model_id: str) -> str:
     normalized = re.sub(r"[^a-zA-Z0-9]+", "-", model_id).strip("-").lower()
     return f"openrouter-{normalized}" if normalized else "openrouter-model"
 
+def build_openrouter_safe_model_id(model_id: str) -> str:
+    """
+    Convert OpenRouter model ids like `z-ai/glm-4.5-air:free` into a
+    Control-UI-safe alias such as `openrouter-z-ai-glm-4-5-air-free`.
+    """
+    normalized = re.sub(r"[^a-zA-Z0-9]+", "-", model_id).strip("-").lower()
+    return f"openrouter-{normalized}" if normalized else "openrouter-model"
+
 
 class ModelService:
     """

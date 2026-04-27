@@ -16,23 +16,21 @@ from app.core.dependencies import (
     get_user_service,
     require_active_user,
 )
-from app.core.errors import AccessDeniedError, InvitationNotFoundError, UserNotFoundError
 from app.domain.models import Model, ModelSource, PricingType
+from app.core.errors import AccessDeniedError, InvitationNotFoundError, ModelNotFoundError, UserNotFoundError
 from app.domain.users import UserStatus
 from app.infra.model_gateway_client import ModelGatewayClient
 from app.models.invitation import InvitationModel
 from app.models.user import UserModel, UserRuntimeBindingModel
 from app.repositories.invitation_repository import InvitationRepository
-from app.repositories.usage_repository import (
-    UsageRepository,
-    get_inmemory_usage_repository,
-)
 from app.repositories.model_repository import (
     ModelRepository,
     ProviderCredentialRepository,
+    UsageRepository,
     get_inmemory_provider_credential_repository,
 )
 from app.schemas.admin import (
+    AdminUsagePeriod,
     AdminUsageSummaryResponse,
     AdminUserDetailResponse,
     AdminUserListResponse,
@@ -51,6 +49,12 @@ from app.services.usage_service import UsageService
 from app.services.runtime_service import RuntimeService
 from app.services.user_service import UserService
 from app.services.model_service import ModelService, ProviderCredentialService
+
+
+class SyncOpenRouterModelsResponse(BaseModel):
+    fetched: int
+    created: int
+    updated: int
 
 
 router = APIRouter(tags=["admin"])
@@ -333,7 +337,7 @@ async def list_admin_models(
     except Exception:
         available_model_ids = []
 
-    models_by_id = {model.model_id: model for model in service.list_models_for_admin()}
+    models = service.list_models_for_admin()
     if available_model_ids:
         for model_id in available_model_ids:
             if model_repo.get_model(model_id) is None:
@@ -366,20 +370,34 @@ async def list_admin_models(
                     )
                 )
         models_by_id = {model.model_id: model for model in service.list_models_for_admin()}
+            if model_repo.get_model(model_id) is None:
+                model_repo.save(
+                    Model(
+                        model_id=model_id,
+                        name=model_id,
+                        provider="litellm",
+                        source=ModelSource.SHARED,
+                        enabled=True,
+                        user_visible=True,
+                        default_route=f"litellm/{model_id}",
+                        default_provider_credential_id=None,
+                    )
+                )
+        models_by_id = {model.model_id: model for model in service.list_models_for_admin()}
 
-    models = list(models_by_id.values())
-    if available_model_ids:
-        preferred = {model_id: idx for idx, model_id in enumerate(available_model_ids)}
-        models.sort(
-            key=lambda model: (
-                0 if model.model_id in preferred else 1,
-                preferred.get(model.model_id, 10**9),
-                model.name.lower(),
-                model.model_id,
+        models = list(models_by_id.values())
+        if available_model_ids:
+            preferred = {model_id: idx for idx, model_id in enumerate(available_model_ids)}
+            models.sort(
+                key=lambda model: (
+                    0 if model.model_id in preferred else 1,
+                    preferred.get(model.model_id, 10**9),
+                    model.name.lower(),
+                    model.model_id,
+                )
             )
-        )
-    else:
-        models.sort(key=lambda model: (model.name.lower(), model.model_id))
+        else:
+            models.sort(key=lambda model: (model.name.lower(), model.model_id))
 
     return AdminModelListResponse(
         models=[
@@ -407,10 +425,15 @@ async def update_admin_model(
     body: UpdateAdminModelRequest,
     ctx: AuthContext = Depends(_require_admin),
     service: ModelService = Depends(get_model_service),
+    model_repo: ModelRepository = Depends(get_model_repository),
     settings=Depends(get_app_settings),
     runtime_service: RuntimeService = Depends(get_runtime_service),
     user_service: UserService = Depends(get_user_service),
 ) -> AdminModelItem:
+    before = model_repo.get_model(model_id)
+    if before is None:
+        raise ModelNotFoundError()
+
     model = service.update_model(
         model_id,
         enabled=body.enabled,
@@ -439,14 +462,36 @@ async def update_admin_model(
                 },
             )
 
+    # If model is being disabled or made not user-visible, remove from LiteLLM registry
+    is_down = (body.enabled is False or body.userVisible is False)
+    if is_down and model.provider in {"openrouter", "litellm", "ollama"}:
+        try:
+            client = ModelGatewayClient(
+                settings.model_gateway_base_url or "http://litellm:4000",
+                api_key=settings.litellm_api_key,
+                timeout_seconds=10.0,
+            )
+            client.delete_model(model.model_id)
+        except Exception:
+            # Some static or legacy model configs may not support delete - ignore to keep platform consistent.
+            pass
+
+    visibility_changed = (before.enabled != model.enabled) or (before.user_visible != model.user_visible)
     runtime_refresh_triggered = False
     runtime_browser_url: str | None = None
-    if user_service.get_runtime_binding(ctx.userId) is not None:
-        runtime_service.ensure_running(ctx.userId)
-        runtime_refresh_triggered = True
-        binding = user_service.get_runtime_binding(ctx.userId)
-        runtime_browser_url = binding.browser_url if binding is not None else None
-
+    # On model (un)publish, sync to all running runtimes:
+    #   - Hot-reload openclaw.json
+    #   - Restart runtime container (no deletion/no route change)
+    if visibility_changed:
+        for u in user_service.list_users():
+            binding = user_service.get_runtime_binding(u.user_id)
+            if binding is None or getattr(binding.observed_state, "value", "").lower() != "running":
+                continue
+            runtime_service.hot_reload_openclaw_config(u.user_id)
+            runtime_service.restart_runtime(u.user_id)
+            runtime_refresh_triggered = True
+            if u.user_id == ctx.userId:
+                runtime_browser_url = binding.browser_url
     return AdminModelItem(
         modelId=model.model_id,
         name=model.name,
@@ -545,7 +590,17 @@ async def get_admin_usage_summary(
     service: UsageService = Depends(get_usage_service),
 ) -> AdminUsageSummaryResponse:
     summary = service.get_total_usage()
-    return summary
+    now = datetime.now(timezone.utc)
+    start = now - timedelta(days=30)
+    return AdminUsageSummaryResponse(
+        totalRequests=0,
+        totalTokens=summary.total_tokens,
+        usedTokens=summary.used_tokens,
+        totalCost=0.0,
+        byModel=[],
+        byUser=[],
+        period=AdminUsagePeriod(from_=start.isoformat(), to=now.isoformat()),
+    )
 
 
 @router.get("/admin/invitations")

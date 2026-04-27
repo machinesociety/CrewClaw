@@ -104,3 +104,17 @@ def _ensure_governed_model_catalog_columns() -> None:
             text("ALTER TABLE governed_model_catalog ADD COLUMN upstream_model_id VARCHAR(255)")
         )
 
+
+def _ensure_governed_model_catalog_columns() -> None:
+    inspector = inspect(engine)
+    if "governed_model_catalog" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("governed_model_catalog")}
+    if "upstream_model_id" in columns:
+        return
+
+    with engine.begin() as connection:
+        connection.execute(
+            text("ALTER TABLE governed_model_catalog ADD COLUMN upstream_model_id VARCHAR(255)")
+        )

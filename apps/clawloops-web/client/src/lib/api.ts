@@ -231,6 +231,10 @@ export interface Model {
   provider?: string;
   pricingType?: 'free' | 'paid';
   enabled?: boolean;
+  /**
+   * Admin models API currently uses `userVisible`.
+   * Keep `visible` for backward compatibility with older payloads/UI code.
+   */
   visible?: boolean;
   userVisible?: boolean;
   isDefault?: boolean;

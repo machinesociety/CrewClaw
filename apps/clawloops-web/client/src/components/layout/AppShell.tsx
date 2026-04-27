@@ -54,6 +54,7 @@ const adminNavItems: NavItem[] = [
   { label: '公共区域管理', href: '/admin/public-area', icon: Sparkles },
   { label: '用户文件管理', href: '/admin/user-files', icon: FolderOpen },
   { label: 'Usage 汇总', href: '/admin/usage', icon: BarChart3 },
+  { label: '公共区域管理', href: '/admin/public-area', icon: Sparkles },
 ];
 
 function NavLink({ item }: { item: NavItem }) {

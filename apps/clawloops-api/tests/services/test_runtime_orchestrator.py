@@ -54,7 +54,8 @@ class FakeModelConfigPort:
     def get_user_model_config(self, user_id: str) -> ModelConfig:
         return ModelConfig(
             base_url="http://litellm:4000",
-            models=["gpt-4-mini"],
+            models=["qwen-max-proxy"],
+            model_pricing={"qwen-max-proxy": "free"},
             gateway_access_token_ref="token_ref_001",
             config_render_version="v1",
         )
@@ -107,7 +108,7 @@ def _make_service() -> tuple[RuntimeService, FakeBindingPort, FakeRuntimeManager
         runtime_manager=runtime_manager,
         task_repo=task_repo,
         config_renderer=renderer,
-        route_host_suffix="clawloops.test",
+        runtime_route_prefix="/runtime",
     )
     return svc, binding_port, runtime_manager, task_repo
 
@@ -161,6 +162,7 @@ def test_ensure_running_creates_binding_and_calls_runtime_manager(tmp_path):
     assert len(runtime_manager.ensure_payloads) == 1
     payload = runtime_manager.ensure_payloads[0]
     assert payload["runtimeId"] == binding_port.binding.runtimeId
+    assert payload["routePathPrefix"] == "/runtime/rt-001"
     
     # assert "configMount" in payload
     # assert "configFilePath" in payload["configMount"]
@@ -218,4 +220,3 @@ def test_delete_respects_retention_policy_and_marks_deleted():
     assert runtime_manager.delete_calls == [
         ("u_001", binding_port.binding.runtimeId, "wipe_workspace")
     ]
-

@@ -243,6 +243,12 @@ export function PublicAreaView({ mode, basePath }: { mode: 'user' | 'admin'; bas
     }
   };
 
+  const title = mode === 'admin' ? '公共区域管理' : '公共区域';
+  const desc =
+    mode === 'admin'
+      ? '以目录路径管理公共文件（支持覆盖与删除）'
+      : '以目录路径浏览并上传/下载公共文件（仅容器副本）';
+
   const iconForFile = (name: string) => {
     const ext = name.toLowerCase().split('.').pop() || '';
     if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(ext)) return FileImage;
@@ -258,11 +264,16 @@ export function PublicAreaView({ mode, basePath }: { mode: 'user' | 'admin'; bas
   return (
     <div className="page-enter">
       <PageHeader
-        title={mode === 'admin' ? '公共区域管理' : '公共区域'}
-        description={mode === 'admin' ? '以目录路径管理公共文件（支持覆盖与删除）' : '浏览并上传/下载公共文件'}
+        title={title}
+        description={desc}
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => setShowNewFolderDialog(true)} disabled={isUploading}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowNewFolderDialog(true)}
+              disabled={isUploading}
+            >
               <Plus className="w-4 h-4 mr-1" />
               新建文件夹
             </Button>
@@ -287,80 +298,109 @@ export function PublicAreaView({ mode, basePath }: { mode: 'user' | 'admin'; bas
       {error && <ErrorDisplay message={error} />}
 
       {!loading && !error && (
-        <Card className="card-glow">
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={goUp} disabled={!currentPath}>
-                <ChevronLeft className="w-4 h-4" />
-              </Button>
-              <CardTitle className="text-base flex items-center gap-2">
-                <span className="text-muted-foreground">/</span>
-                <span className="truncate">{currentPath ? `${rootPath}/${currentPath}` : rootPath}</span>
-              </CardTitle>
-              <div className="ml-auto text-xs text-muted-foreground mono">{user?.userId}</div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {entries.length === 0 ? (
-              <div className="text-sm text-muted-foreground">目录为空</div>
-            ) : (
-              entries.map((entry) => (
-                <div
-                  key={entry.name}
-                  className="flex items-center justify-between rounded-md border border-border/50 px-3 py-2"
+        <div className="grid grid-cols-1 gap-5">
+          <Card className="card-glow">
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={goUp}
+                  disabled={!currentPath}
                 >
-                  <button
-                    className="flex items-center gap-2 min-w-0 flex-1 text-left"
-                    onClick={() => (entry.isDir ? openDir(entry.name) : undefined)}
-                  >
-                    {entry.isDir ? (
-                      <Folder className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                    ) : (
-                      (() => {
-                        const Icon = iconForFile(entry.name);
-                        return <Icon className="w-4 h-4 text-muted-foreground flex-shrink-0" />;
-                      })()
-                    )}
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium truncate">{entry.name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {entry.isDir ? '目录' : formatBytes(entry.size)}
-                      </div>
-                    </div>
-                  </button>
-                  <div className="flex items-center gap-2">
-                    {!entry.isDir && (
-                      <Button variant="outline" size="sm" onClick={() => downloadFile(entry.name)}>
-                        <Download className="w-4 h-4 mr-1" />
-                        下载
-                      </Button>
-                    )}
-                    {allowDelete && (
-                      <Button variant="destructive" size="icon" onClick={() => deletePath(entry.name)}>
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              ))
-            )}
-
-            {totalPages > 1 && (
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <Button variant="outline" size="sm" onClick={() => setPage(page - 1)} disabled={page <= 1}>
-                  上一页
+                  <ChevronLeft className="w-4 h-4" />
                 </Button>
-                <div className="text-xs text-muted-foreground mono">
-                  {page} / {totalPages}
+                <CardTitle className="text-base flex items-center gap-2">
+                  <span className="text-muted-foreground">/</span>
+                  <span className="truncate">{currentPath ? `${rootPath}/${currentPath}` : rootPath}</span>
+                </CardTitle>
+                <div className="ml-auto text-xs text-muted-foreground mono">
+                  {user?.userId}
                 </div>
-                <Button variant="outline" size="sm" onClick={() => setPage(page + 1)} disabled={page >= totalPages}>
-                  下一页
-                  <ChevronRight className="w-4 h-4 ml-1" />
-                </Button>
               </div>
-            )}
-          </CardContent>
-        </Card>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {entries.length === 0 ? (
+                <div className="text-sm text-muted-foreground">目录为空</div>
+              ) : (
+                entries.map((e) => (
+                  <div
+                    key={e.name}
+                    className="flex items-center justify-between rounded-md border border-border/50 px-3 py-2"
+                  >
+                    <button
+                      className="flex items-center gap-2 min-w-0 flex-1 text-left"
+                      onClick={() => (e.isDir ? openDir(e.name) : undefined)}
+                    >
+                      {e.isDir ? (
+                        <Folder className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                      ) : (
+                        (() => {
+                          const Icon = iconForFile(e.name);
+                          return <Icon className="w-4 h-4 text-muted-foreground flex-shrink-0" />;
+                        })()
+                      )}
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium truncate">{e.name}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {e.isDir ? '目录' : formatBytes(e.size)}
+                        </div>
+                      </div>
+                    </button>
+                    <div className="flex items-center gap-2">
+                      {!e.isDir && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => downloadFile(e.name)}
+                        >
+                          <Download className="w-4 h-4 mr-1" />
+                          下载
+                        </Button>
+                      )}
+                      {allowDelete && (
+                        <Button
+                          variant="destructive"
+                          size="icon"
+                          onClick={() => deletePath(e.name)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+
+              {totalPages > 1 && (
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(page - 1)}
+                    disabled={page <= 1}
+                  >
+                    上一页
+                  </Button>
+                  <div className="text-xs text-muted-foreground mono">
+                    {page} / {totalPages}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(page + 1)}
+                    disabled={page >= totalPages}
+                  >
+                    下一页
+                    <ChevronRight className="w-4 h-4 ml-1" />
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+        </div>
       )}
 
       <Dialog open={showNewFolderDialog} onOpenChange={setShowNewFolderDialog}>
