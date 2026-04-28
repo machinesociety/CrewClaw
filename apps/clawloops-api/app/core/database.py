@@ -87,7 +87,27 @@ def init_db() -> None:
     from app.models import user as user_models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    _ensure_invitation_columns()
     _ensure_governed_model_catalog_columns()
+
+
+def _ensure_invitation_columns() -> None:
+    inspector = inspect(engine)
+    if "invitations" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("invitations")}
+    if "created_at" in columns:
+        return
+
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE invitations ADD COLUMN created_at DATETIME"))
+        connection.execute(
+            text(
+                "UPDATE invitations "
+                "SET created_at = COALESCE(created_at, expires_at, CURRENT_TIMESTAMP)"
+            )
+        )
 
 
 def _ensure_governed_model_catalog_columns() -> None:

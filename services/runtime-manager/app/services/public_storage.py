@@ -102,7 +102,6 @@ def _migrate_legacy_public_files_dir() -> None:
             shutil.move(str(item), str(target))
     if legacy.exists():
         shutil.rmtree(legacy)
->>>>>>> origin/qsh774
 
 
 def _sorted_dir_entries(target: Path) -> list[PublicEntry]:

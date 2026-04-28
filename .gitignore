@@ -2,9 +2,7 @@
 *.db
 .venv
 .idea
-
 .pnpm-store/
-
 .codex
 AGENTS.md
 __pycache__/
@@ -12,3 +10,8 @@ __pycache__/
 docker_test/
 docs/
 infra/compose/.env
+
+.pytest_cache/
+user-files/
+public-area/
+.env

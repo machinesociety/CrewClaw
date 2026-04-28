@@ -43,12 +43,9 @@ services:
       - CLAWLOOPS_OPENROUTER_API_KEY=${CLAWLOOPS_OPENROUTER_API_KEY:-}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-}
     volumes:
       - ${USER_FILES_HOST_PATH:-../../user-files}:/app/user-files
-      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-    volumes:
       - clawloops_api_data:/var/lib/clawloops-api
     labels:
       - traefik.enable=true

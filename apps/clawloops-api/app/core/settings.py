@@ -58,14 +58,12 @@ class AppSettings(BaseSettings):
         if self.dashscope_api_key is None:
             return True
         normalized = self._normalize_api_key(self.dashscope_api_key, provider_prefix="dashscope:")
-        if normalized is None:
-            return False
-        return normalized.startswith("sk-")
+        return bool(normalized)
 
     def has_explicit_openrouter_support(self) -> bool:
-        normalized = self._normalize_api_key(self.provider_openrouter_api_key)
-        if normalized is None:
+        if self.provider_openrouter_api_key is None:
             return True
+        normalized = self._normalize_api_key(self.provider_openrouter_api_key)
         return bool(normalized)
 
     def has_explicit_ollama_support(self) -> bool:

@@ -146,6 +146,10 @@ def get_user_service(
     )
 
 
+def get_user_file_service() -> UserFileService:
+    return UserFileService(storage_manager=FileStorageManager())
+
+
 def get_runtime_task_repository() -> InMemoryRuntimeTaskRepository:
     global _runtime_task_repo_singleton
     if _runtime_task_repo_singleton is None:

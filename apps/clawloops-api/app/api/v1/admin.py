@@ -27,6 +27,7 @@ from app.repositories.model_repository import (
     ModelRepository,
     ProviderCredentialRepository,
     UsageRepository,
+    get_inmemory_usage_repository,
     get_inmemory_provider_credential_repository,
 )
 from app.schemas.admin import (
@@ -45,10 +46,9 @@ from app.schemas.credentials import (
     VerifyProviderCredentialResponse,
 )
 from app.schemas.models import AdminModelItem, AdminModelListResponse, UpdateAdminModelRequest
-from app.services.usage_service import UsageService
 from app.services.runtime_service import RuntimeService
 from app.services.user_service import UserService
-from app.services.model_service import ModelService, ProviderCredentialService
+from app.services.model_service import ModelService, ProviderCredentialService, UsageService
 
 
 class SyncOpenRouterModelsResponse(BaseModel):
@@ -338,6 +338,7 @@ async def list_admin_models(
         available_model_ids = []
 
     models = service.list_models_for_admin()
+    models_by_id = {model.model_id: model for model in models}
     if available_model_ids:
         for model_id in available_model_ids:
             if model_repo.get_model(model_id) is None:
@@ -370,34 +371,20 @@ async def list_admin_models(
                     )
                 )
         models_by_id = {model.model_id: model for model in service.list_models_for_admin()}
-            if model_repo.get_model(model_id) is None:
-                model_repo.save(
-                    Model(
-                        model_id=model_id,
-                        name=model_id,
-                        provider="litellm",
-                        source=ModelSource.SHARED,
-                        enabled=True,
-                        user_visible=True,
-                        default_route=f"litellm/{model_id}",
-                        default_provider_credential_id=None,
-                    )
-                )
-        models_by_id = {model.model_id: model for model in service.list_models_for_admin()}
 
-        models = list(models_by_id.values())
-        if available_model_ids:
-            preferred = {model_id: idx for idx, model_id in enumerate(available_model_ids)}
-            models.sort(
-                key=lambda model: (
-                    0 if model.model_id in preferred else 1,
-                    preferred.get(model.model_id, 10**9),
-                    model.name.lower(),
-                    model.model_id,
-                )
+    models = list(models_by_id.values())
+    if available_model_ids:
+        preferred = {model_id: idx for idx, model_id in enumerate(available_model_ids)}
+        models.sort(
+            key=lambda model: (
+                0 if model.model_id in preferred else 1,
+                preferred.get(model.model_id, 10**9),
+                model.name.lower(),
+                model.model_id,
             )
-        else:
-            models.sort(key=lambda model: (model.name.lower(), model.model_id))
+        )
+    else:
+        models.sort(key=lambda model: (model.name.lower(), model.model_id))
 
     return AdminModelListResponse(
         models=[

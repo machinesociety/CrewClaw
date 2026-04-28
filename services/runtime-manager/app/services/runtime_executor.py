@@ -144,15 +144,50 @@ class RuntimeExecutor:
             },
         )
 
-    def _get_single_container(self, runtime_id: str):
+    @staticmethod
+    def _container_created_at(container) -> str:
+        container.reload()
+        created = container.attrs.get("Created")
+        return created if isinstance(created, str) else ""
+
+    def _managed_container_score(self, container, paths: RuntimeStoragePaths | None = None) -> tuple[int, int, str]:
+        container.reload()
+        mount_score = 0
+        if paths is not None and self._container_mounts_match(container, paths):
+            mount_score = 1
+        status_score = {
+            "running": 3,
+            "created": 2,
+            "exited": 1,
+        }.get(container.status, 0)
+        return (mount_score, status_score, self._container_created_at(container))
+
+    def _dedupe_managed(self, runtime_id: str, paths: RuntimeStoragePaths | None = None):
         containers = self._list_managed(runtime_id)
-        if len(containers) > 1:
-            raise RuntimeManagerError(
-                "RUNTIME_ACTION_CONFLICT",
-                "multiple managed containers matched the same runtimeId",
-                409,
+        if not containers:
+            return None
+
+        containers.sort(key=lambda item: self._managed_container_score(item, paths), reverse=True)
+        keep = containers[0]
+        duplicates = containers[1:]
+        if duplicates:
+            logger.warning(
+                "Found %d duplicate managed containers for runtimeId=%s; keeping %s and removing duplicates",
+                len(duplicates),
+                runtime_id,
+                keep.id,
             )
-        return containers[0] if containers else None
+        for duplicate in duplicates:
+            try:
+                logger.info("Removing duplicate runtime container %s (%s)", duplicate.id, duplicate.name)
+                duplicate.remove(force=True)
+            except Exception as exc:
+                logger.warning("Failed to remove duplicate runtime container %s: %s", duplicate.id, exc)
+        keep.reload()
+        return keep
+
+    def _get_single_container(self, runtime_id: str):
+        return self._dedupe_managed(runtime_id)
 
     def _resolve_user_files_host_root(self) -> str:
         if self._settings.runtime_user_files_host_path:
@@ -394,8 +429,8 @@ class RuntimeExecutor:
             sync_public_copy_for_user(req.userId)
             logger.info("Synced public-area copy")
             
-            write_openclaw_config(req.compat.openclawConfigDir, req.renderedConfig.openclawJson)
-                        if not is_windows:
+            write_openclaw_config(paths.container_config, req.renderedConfig.openclawJson)
+            if not is_windows:
                 config_file = Path(paths.container_config) / "openclaw.json"
                 if config_file.exists():
                     try:
@@ -416,11 +451,9 @@ class RuntimeExecutor:
                     .get("IPAddress", "")
                 )
 
-            existing_containers = self._list_managed(req.runtimeId)
-            container = None
+            container = self._dedupe_managed(req.runtimeId, paths)
 
-            if existing_containers:
-                container = existing_containers[0]
+            if container is not None:
                 container.reload()
                 logger.info(f"Found existing container: {container.id}, status: {container.status}")
                 if not self._container_mounts_match(container, paths):
@@ -582,8 +615,8 @@ class RuntimeExecutor:
 
     def delete(self, req: DeleteContainerRequest) -> ContainerStateResponse:
         try:
-            container = self._get_single_container(req.runtimeId)
-            if container is not None:
+            containers = self._list_managed(req.runtimeId)
+            for container in containers:
                 container.remove(force=True)
             if req.retentionPolicy == "wipe_workspace" and req.compat is not None:
                 local_storage = self._resolve_runtime_storage_paths(req.userId).container_root

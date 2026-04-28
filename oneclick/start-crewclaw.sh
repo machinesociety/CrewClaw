@@ -265,13 +265,13 @@ suggest_runtime_public_base_url() {
   current_scheme="$(read_env_value "RUNTIME_BROWSER_SCHEME" || true)"
 
   if [[ "$SET_PUBLIC_BASE_URL_MODE" == "auto-ip" ]]; then
-    upsert_env_value "CLAWLOOPS_DOMAIN" "clawloops.${ips[0]}"
-    upsert_env_value "RUNTIME_MANAGER_DOMAIN" "runtime-manager.${ips[0]}"
+    upsert_env_value "CLAWLOOPS_DOMAIN" "${ips[0]}"
+    upsert_env_value "RUNTIME_MANAGER_DOMAIN" "${ips[0]}"
     upsert_env_value "RUNTIME_PUBLIC_HOST" "${ips[0]}"
     upsert_env_value "RUNTIME_BROWSER_SCHEME" "http"
     upsert_env_value "RUNTIME_PUBLIC_BASE_URL" "$suggestion"
-    echo "已按 auto-ip 更新 CLAWLOOPS_DOMAIN=clawloops.${ips[0]}"
-    echo "已按 auto-ip 更新 RUNTIME_MANAGER_DOMAIN=runtime-manager.${ips[0]}"
+    echo "已按 auto-ip 更新 CLAWLOOPS_DOMAIN=${ips[0]}"
+    echo "已按 auto-ip 更新 RUNTIME_MANAGER_DOMAIN=${ips[0]}"
     echo "已按 auto-ip 更新 RUNTIME_PUBLIC_HOST=${ips[0]}"
     echo "已按 auto-ip 更新 RUNTIME_PUBLIC_BASE_URL=$suggestion"
     return 0
@@ -308,13 +308,13 @@ suggest_runtime_public_base_url() {
   done
 
   selected_ip="${ips[$((selected_idx - 1))]}"
-  upsert_env_value "CLAWLOOPS_DOMAIN" "clawloops.${selected_ip}"
-  upsert_env_value "RUNTIME_MANAGER_DOMAIN" "runtime-manager.${selected_ip}"
+  upsert_env_value "CLAWLOOPS_DOMAIN" "${selected_ip}"
+  upsert_env_value "RUNTIME_MANAGER_DOMAIN" "${selected_ip}"
   upsert_env_value "RUNTIME_PUBLIC_HOST" "${selected_ip}"
   upsert_env_value "RUNTIME_BROWSER_SCHEME" "http"
   upsert_env_value "RUNTIME_PUBLIC_BASE_URL" "http://${selected_ip}"
-  echo "已设置 CLAWLOOPS_DOMAIN=clawloops.${selected_ip}"
-  echo "已设置 RUNTIME_MANAGER_DOMAIN=runtime-manager.${selected_ip}"
+  echo "已设置 CLAWLOOPS_DOMAIN=${selected_ip}"
+  echo "已设置 RUNTIME_MANAGER_DOMAIN=${selected_ip}"
   echo "已设置 RUNTIME_PUBLIC_HOST=${selected_ip}"
   echo "已设置 RUNTIME_PUBLIC_BASE_URL=http://${selected_ip}"
 }
@@ -340,10 +340,11 @@ validate_env_file() {
 }
 
 print_access_summary() {
-  local clawloops_domain runtime_manager_domain runtime_public_base_url
+  local clawloops_domain runtime_manager_domain runtime_public_base_url runtime_public_host
   clawloops_domain="$(read_env_value "CLAWLOOPS_DOMAIN")"
   runtime_manager_domain="$(read_env_value "RUNTIME_MANAGER_DOMAIN")"
   runtime_public_base_url="$(read_env_value "RUNTIME_PUBLIC_BASE_URL")"
+  runtime_public_host="$(read_env_value "RUNTIME_PUBLIC_HOST" || true)"
   echo "启动完成。"
   echo "主站：http://${clawloops_domain}"
   echo "Runtime Manager：http://${runtime_manager_domain}"
@@ -354,9 +355,14 @@ print_access_summary() {
     echo "如果浏览器无法解析 .localhost，可在 hosts 中加入："
     echo "127.0.0.1 ${clawloops_domain}"
   elif [[ "$runtime_public_base_url" != "http://${clawloops_domain}" && "$runtime_public_base_url" != "https://${clawloops_domain}" ]]; then
-    echo
-    echo "注意：当前主站入口与 Runtime 对外入口不一致。"
-    echo "局域网访问时，通常应让 CLAWLOOPS_DOMAIN 与 RUNTIME_PUBLIC_BASE_URL 指向同一台机器。"
+    # 一键脚本常为「主站 clawloops.<IP> + Runtime 用裸 IP」，同一机器，不刷屏提示
+    if [[ -z "$runtime_public_host" ]] || \
+       [[ "${runtime_public_base_url}" != "http://${runtime_public_host}" ]] || \
+       [[ "${clawloops_domain}" != "clawloops.${runtime_public_host}" ]]; then
+      echo
+      echo "注意：当前主站入口与 Runtime 对外入口不一致。"
+      echo "局域网访问时，通常应让 CLAWLOOPS_DOMAIN 与 RUNTIME_PUBLIC_BASE_URL 指向同一台机器。"
+    fi
   fi
 }
 
