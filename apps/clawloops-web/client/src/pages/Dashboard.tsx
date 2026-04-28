@@ -585,7 +585,7 @@ function DashboardContent() {
         modelId,
         enabled ? { enabled: true, userVisible: true } : { enabled: false },
       );
-      setModels((prev) => prev.map((m) => (m.modelId === modelId ? { ...m, ...updated } : m)));
+      await loadModels();
       if (updated.runtimeRefreshTriggered) {
         toast.success(enabled ? '模型已上架，OpenClaw 已刷新' : '模型已下架，OpenClaw 已刷新', {
           description: updated.runtimeBrowserUrl
@@ -600,7 +600,7 @@ function DashboardContent() {
     } finally {
       setModelsUpdatingId(null);
     }
-  }, []);
+  }, [loadModels]);
 
   useEffect(() => {
     // Per BFF编排.md §5.1: auth/me first, then parallel

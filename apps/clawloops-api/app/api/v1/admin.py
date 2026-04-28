@@ -474,9 +474,9 @@ async def update_admin_model(
             binding = user_service.get_runtime_binding(u.user_id)
             if binding is None or getattr(binding.observed_state, "value", "").lower() != "running":
                 continue
-            runtime_service.hot_reload_openclaw_config(u.user_id)
-            runtime_service.restart_runtime(u.user_id)
-            runtime_refresh_triggered = True
+            reloaded = runtime_service.hot_reload_openclaw_config(u.user_id)
+            restarted = runtime_service.restart_runtime(u.user_id) if reloaded else False
+            runtime_refresh_triggered = runtime_refresh_triggered or (reloaded and restarted)
             if u.user_id == ctx.userId:
                 runtime_browser_url = binding.browser_url
     return AdminModelItem(

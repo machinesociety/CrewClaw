@@ -59,10 +59,25 @@ class ModelGatewayClient:
         _ = user_id
 
         resolved_models = [m for m in preferred_models if m]
+        try:
+            available_models = set(self.list_models())
+        except Exception:
+            available_models = set()
+
+        if available_models:
+            resolved_models = [model_id for model_id in resolved_models if model_id in available_models]
+
+        deduped_models: list[str] = []
+        seen_models: set[str] = set()
+        for model_id in resolved_models:
+            if model_id in seen_models:
+                continue
+            seen_models.add(model_id)
+            deduped_models.append(model_id)
 
         return {
             "baseUrl": self._base_url,
-            "models": resolved_models,
+            "models": deduped_models,
             "gatewayAccessTokenRef": "token_ref_001",
             "configRenderVersion": "v1",
         }
